@@ -17,7 +17,7 @@ struct SettingsView: View {
     @State private var statusIsError = false
 
     init(
-        settingsStore: any SettingsStoring = SettingsStore(),
+        settingsStore: any SettingsStoring,
         keychainStore: any KeychainStoring = KeychainStore(),
         hotkeyManager: (any GlobalHotkeyManaging)? = nil
     ) {

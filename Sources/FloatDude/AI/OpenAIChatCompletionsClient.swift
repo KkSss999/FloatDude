@@ -95,9 +95,28 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
         urlRequest.httpBody = try requestBody(for: request)
 
         let response = try await transport.open(urlRequest)
-        defer { response.cancel() }
-        try checkCancellation(gate)
+        try await withTaskCancellationHandler(
+            operation: {
+                defer { response.cancel() }
+                try await consume(
+                    response,
+                    continuation: continuation,
+                    gate: gate
+                )
+            },
+            onCancel: {
+                gate.cancel()
+                response.cancel()
+            }
+        )
+    }
 
+    private func consume(
+        _ response: LLMHTTPResponse,
+        continuation: AsyncThrowingStream<LLMStreamEvent, Error>.Continuation,
+        gate: StreamCancellationGate
+    ) async throws {
+        try checkCancellation(gate)
         guard (200..<300).contains(response.statusCode) else {
             let body = try await collect(response.body, gate: gate, limit: 64 * 1024)
             let message = LLMSecretRedactor.redact(

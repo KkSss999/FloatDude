@@ -104,7 +104,10 @@ final class LLMClientTests: XCTestCase {
         let cancellation = CancellationRecorder()
         let firstEvent = OneShotSignal()
         let transport = FakeTransport { _ in
-            LLMHTTPResponse(body: body.stream, cancellation: { cancellation.mark() })
+            LLMHTTPResponse(body: body.stream, cancellation: {
+                cancellation.mark()
+                body.finish()
+            })
         }
         let client = try makeClient(transport: transport)
         let consumingTask = Task<[LLMStreamEvent], Never> {
