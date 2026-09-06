@@ -60,7 +60,7 @@ struct LLMHTTPResponse: Sendable {
     private let cancellation: @Sendable () -> Void
 
     init(
-        statusCode: Int,
+        statusCode: Int = 200,
         headers: [String: String] = [:],
         body: AsyncThrowingStream<Data, Error>,
         cancellation: @escaping @Sendable () -> Void = {}

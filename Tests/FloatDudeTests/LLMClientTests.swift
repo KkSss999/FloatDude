@@ -107,7 +107,7 @@ final class LLMClientTests: XCTestCase {
             LLMHTTPResponse(body: body.stream, cancellation: { cancellation.mark() })
         }
         let client = try makeClient(transport: transport)
-        let consumingTask = Task { () -> [LLMStreamEvent] in
+        let consumingTask = Task<[LLMStreamEvent], Never> {
             var result: [LLMStreamEvent] = []
             do {
                 for try await event in client.stream(LLMRequest(action: .ask, context: nil, userPrompt: "Hi")) {
@@ -158,10 +158,14 @@ private final class FakeTransport: LLMStreamingTransport, @unchecked Sendable {
     }
 
     func open(_ request: URLRequest) async throws -> LLMHTTPResponse {
+        record(request: request)
+        return handler(request)
+    }
+
+    private func record(request: URLRequest) {
         lock.lock()
         self.request = request
         lock.unlock()
-        return handler(request)
     }
 
     static func response(statusCode: Int = 200, chunks: [Data]) -> LLMHTTPResponse {
