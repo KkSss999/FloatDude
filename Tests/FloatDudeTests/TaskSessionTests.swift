@@ -38,7 +38,7 @@ final class TaskSessionTests: XCTestCase {
         metrics.markFirstToken(at: 2_125_000_000)
 
         XCTAssertEqual(metrics.latest.shortcutToPanelMilliseconds, 150)
-        XCTAssertEqual(metrics.latest.contextToPreviewMilliseconds, 250)
+        XCTAssertEqual(metrics.latest.contextToPreviewMilliseconds, 100)
         XCTAssertEqual(metrics.latest.requestToFirstTokenMilliseconds, 125)
     }
 }

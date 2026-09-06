@@ -13,7 +13,8 @@ private final class TestKeychainBackend: KeychainBackend, @unchecked Sendable {
 
     func read(service: String, account: String) -> KeychainReadResult {
         operations.append("read")
-        return KeychainReadResult(status: readStatus, data: storedData)
+        let status = readStatus == errSecSuccess && storedData == nil ? errSecItemNotFound : readStatus
+        return KeychainReadResult(status: status, data: storedData)
     }
 
     func add(data: Data, service: String, account: String) -> OSStatus {

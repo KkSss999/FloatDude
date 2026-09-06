@@ -101,8 +101,12 @@ enum LLMEndpoint {
 
         var normalized = components
         var path = normalized.percentEncodedPath
-        while path.count > 1 && path.hasSuffix("/") {
-            path.removeLast()
+        if path == "/" {
+            path = ""
+        } else {
+            while path.count > 1 && path.hasSuffix("/") {
+                path.removeLast()
+            }
         }
         normalized.percentEncodedPath = path
 
