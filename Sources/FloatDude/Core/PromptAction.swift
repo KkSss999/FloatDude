@@ -1,0 +1,15 @@
+enum PromptAction: String, CaseIterable, Codable, Sendable {
+    case explain
+    case translate
+    case rewrite
+    case ask
+
+    var title: String {
+        switch self {
+        case .explain: "Explain"
+        case .translate: "Translate"
+        case .rewrite: "Rewrite"
+        case .ask: "Ask Anything"
+        }
+    }
+}

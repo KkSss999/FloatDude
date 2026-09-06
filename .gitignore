@@ -1,0 +1,16 @@
+.DS_Store
+.build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.moved-aside
+*.swp
+*.xcarchive
+
+# Signing, local configuration, and secrets
+*.mobileprovision
+Config/Local.xcconfig
+Config/Secrets.xcconfig
+
+# Swift Package Manager resolution is a local choice until dependencies exist.
+Package.resolved
