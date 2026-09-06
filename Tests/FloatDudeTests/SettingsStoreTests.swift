@@ -53,6 +53,9 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertThrowsError(try SettingsStore.normalizeBaseURL("https://api.example.com?token=secret")) { error in
             XCTAssertEqual(error as? SettingsValidationError, .endpointContainsQuery)
         }
+        XCTAssertThrowsError(try SettingsStore.normalizeBaseURL("http://api.example.com")) { error in
+            XCTAssertEqual(error as? SettingsValidationError, .invalidEndpoint)
+        }
     }
 
     func testInvalidModelAndShortcutAreNotPersisted() {

@@ -46,6 +46,7 @@ Read [architecture](docs/ARCHITECTURE.md), [UI direction](docs/UI_DIRECTION.md),
 ```sh
 swift build
 swift test
+./Scripts/run-local-validation.sh
 xcodebuild -project FloatDude.xcodeproj -scheme FloatDude -destination 'platform=macOS' build
 xcodebuild -project FloatDude.xcodeproj -scheme FloatDude -destination 'platform=macOS' test
 ```

@@ -58,14 +58,14 @@ final class TaskCoordinator: ObservableObject {
         settingsStore: any SettingsStoring,
         keychainStore: any KeychainStoring,
         clipboardManager: any ClipboardManaging,
-        metrics: PerformanceMetrics = PerformanceMetrics()
+        metrics: PerformanceMetrics? = nil
     ) {
         self.contextCapturer = contextCapturer
         self.streamFactory = streamFactory
         self.settingsStore = settingsStore
         self.keychainStore = keychainStore
         self.clipboardManager = clipboardManager
-        self.metrics = metrics
+        self.metrics = metrics ?? PerformanceMetrics()
     }
 
     deinit {
