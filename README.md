@@ -38,7 +38,7 @@ Sources/FloatDude/
 └── Core/      product domain types
 ```
 
-Read [architecture](docs/ARCHITECTURE.md), [implementation handoff](docs/DEVELOPMENT_HANDOFF.md), and [quality gates](docs/QUALITY_GATES.md) before implementing behavior.
+Read [architecture](docs/ARCHITECTURE.md), [UI direction](docs/UI_DIRECTION.md), [implementation handoff](docs/DEVELOPMENT_HANDOFF.md), and [quality gates](docs/QUALITY_GATES.md) before implementing behavior.
 
 ## Local checks
 
