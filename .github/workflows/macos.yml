@@ -1,0 +1,50 @@
+name: macOS
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: macos-14
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Scan tracked content for credential patterns
+        run: bash Scripts/secret-scan.sh
+
+      - name: Build with SwiftPM
+        run: swift build
+
+      - name: Test with SwiftPM
+        run: swift test
+
+      - name: Build the macOS app target
+        run: >-
+          xcodebuild
+          -project FloatDude.xcodeproj
+          -scheme FloatDude
+          -configuration Debug
+          -destination 'platform=macOS'
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          build
+
+      - name: Test the macOS app target
+        run: >-
+          xcodebuild
+          -project FloatDude.xcodeproj
+          -scheme FloatDude
+          -configuration Debug
+          -destination 'platform=macOS'
+          CODE_SIGNING_ALLOWED=NO
+          CODE_SIGNING_REQUIRED=NO
+          test
