@@ -4,23 +4,44 @@ import SwiftUI
 @main
 struct FloatDudeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @StateObject private var runtime = AppRuntime.shared
 
     var body: some Scene {
         MenuBarExtra("FloatDude", systemImage: "sparkles") {
-            MenuBarPlaceholderView()
+            MenuBarView(runtime: runtime)
         }
         .menuBarExtraStyle(.window)
+
+        Settings {
+            SettingsView(
+                settingsStore: runtime.settingsStore,
+                keychainStore: runtime.keychainStore,
+                hotkeyManager: runtime.hotkeyManager
+            )
+        }
     }
 }
 
-private struct MenuBarPlaceholderView: View {
+private struct MenuBarView: View {
+    @Environment(\.openSettings) private var openSettings
+    @ObservedObject var runtime: AppRuntime
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("FloatDude")
                 .font(.headline)
-            Text("0.1.0 project scaffold")
+            Text("Ready in the menu bar")
                 .foregroundStyle(.secondary)
+            if let startupError = runtime.startupError {
+                Label(startupError, systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Divider()
+            Button("Settings…") {
+                openSettings()
+            }
             Button("Quit FloatDude") {
                 NSApplication.shared.terminate(nil)
             }

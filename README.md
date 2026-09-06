@@ -22,6 +22,7 @@ This repository currently contains the application and architecture scaffold onl
 
 - Swift 6, SwiftUI, and AppKit
 - macOS 14 Sonoma or newer
+- Xcode 16 or newer for the native app target and XCTest
 - No third-party runtime dependencies in the initial scaffold
 - Configuration: OpenAI-compatible Chat Completions streaming API
 - Credentials: Keychain only; never `UserDefaults`, source control, or logs
@@ -45,6 +46,8 @@ Read [architecture](docs/ARCHITECTURE.md), [UI direction](docs/UI_DIRECTION.md),
 ```sh
 swift build
 swift test
+xcodebuild -project FloatDude.xcodeproj -scheme FloatDude -destination 'platform=macOS' build
+xcodebuild -project FloatDude.xcodeproj -scheme FloatDude -destination 'platform=macOS' test
 ```
 
-Opening `Package.swift` in Xcode is supported. Release signing, notarization, app icons, and a distributable `.app` bundle are deliberately deferred from v0.1.0.
+`swift build` remains available for the package scaffold. The native app target and XCTest suite require a full Xcode installation; Command Line Tools alone do not provide `xcodebuild` or the XCTest module. The app target is intentionally unsigned and unsandboxed in v0.1.0 so Accessibility and global-hotkey integration can be validated; the target declares outbound network access for the configured model endpoint. Release signing, notarization, app icons, and a distributable `.app` bundle are deliberately deferred from v0.1.0.

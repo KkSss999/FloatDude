@@ -1,0 +1,171 @@
+import Foundation
+import XCTest
+@testable import FloatDude
+
+@MainActor
+final class TaskCoordinatorTests: XCTestCase {
+    func testSuccessfulSingleTurnFlowStreamsAndCopiesFinalVisibleText() async throws {
+        let clipboard = TestClipboard()
+        let requestBox = RequestBox()
+        let coordinator = makeCoordinator(
+            context: CapturedContext(text: "source", source: .accessibilitySelection, applicationName: "TestApp"),
+            requestBox: requestBox,
+            clipboard: clipboard
+        )
+
+        coordinator.beginInvocation()
+        await waitUntil { coordinator.session.phase == .contextCaptured }
+        coordinator.submit(action: .explain, userPrompt: "")
+        await waitUntil { coordinator.session.phase == .completed }
+
+        XCTAssertEqual(coordinator.session.response, "first answer")
+        XCTAssertEqual(requestBox.request?.action, .explain)
+        XCTAssertEqual(requestBox.request?.context?.text, "source")
+
+        coordinator.copyResponse()
+        XCTAssertEqual(clipboard.lastWrite, "first answer")
+    }
+
+    func testMissingConfigurationOpensSettingsWithoutStartingStream() async {
+        let settings = TestSettingsStore(settings: .default)
+        var didOpenSettings = false
+        let coordinator = makeCoordinator(settings: settings)
+        coordinator.onOpenSettings = { didOpenSettings = true }
+
+        coordinator.beginInvocation()
+        await waitUntil { coordinator.session.phase == .contextCaptured }
+        coordinator.submit(action: .explain, userPrompt: "")
+
+        XCTAssertEqual(coordinator.session.phase, .failed)
+        XCTAssertTrue(didOpenSettings)
+    }
+
+    func testCancellationDropsLateStreamDeltas() async {
+        let gate = ControlledStream()
+        let coordinator = makeCoordinator(stream: gate)
+
+        coordinator.beginInvocation()
+        await waitUntil { coordinator.session.phase == .contextCaptured }
+        coordinator.submit(action: .ask, userPrompt: "question")
+        await waitUntil { coordinator.session.phase == .streaming }
+
+        coordinator.cancelAndDismiss()
+        gate.send(.textDelta("late"))
+        gate.send(.completed)
+        await Task.yield()
+
+        XCTAssertEqual(coordinator.session.phase, .cancelled)
+        XCTAssertEqual(coordinator.session.response, "")
+    }
+
+    private func makeCoordinator(
+        context: CapturedContext? = CapturedContext(text: "context", source: .clipboard, applicationName: nil),
+        settings: TestSettingsStore = TestSettingsStore(settings: AppSettings(
+            baseURL: URL(string: "https://provider.example"),
+            model: "demo-model",
+            hotkeyDescription: "Option-Space"
+        )),
+        requestBox: RequestBox = RequestBox(),
+        clipboard: TestClipboard = TestClipboard(),
+        stream: ControlledStream? = nil
+    ) -> TaskCoordinator {
+        let contextCapturer = TestContextCapturer(context: context)
+        let keychain = TestKeychain()
+        if let stream {
+            return TaskCoordinator(
+                contextCapturer: contextCapturer,
+                streamFactory: stream.factory,
+                settingsStore: settings,
+                keychainStore: keychain,
+                clipboardManager: clipboard
+            )
+        }
+
+        let streamFactory: LLMStreamFactory = { request, _, _ in
+            requestBox.request = request
+            return AsyncThrowingStream { continuation in
+                continuation.yield(.textDelta("first "))
+                continuation.yield(.textDelta("answer"))
+                continuation.yield(.completed)
+                continuation.finish()
+            }
+        }
+        return TaskCoordinator(
+            contextCapturer: contextCapturer,
+            streamFactory: streamFactory,
+            settingsStore: settings,
+            keychainStore: keychain,
+            clipboardManager: clipboard
+        )
+    }
+
+    private func waitUntil(
+        _ predicate: @escaping @MainActor () -> Bool
+    ) async {
+        for _ in 0..<100 {
+            if predicate() { return }
+            await Task.yield()
+        }
+    }
+}
+
+@MainActor
+private final class TestSettingsStore: SettingsStoring {
+    private(set) var current: AppSettings
+
+    init(settings: AppSettings) {
+        current = settings
+    }
+
+    func save(_ settings: AppSettings) {
+        current = settings
+    }
+}
+
+private struct TestContextCapturer: ContextCapturing {
+    let context: CapturedContext?
+
+    func captureContext(directInput: String?) async -> ContextCaptureResult {
+        if let context {
+            return .captured(context)
+        }
+        return .unavailable(reason: .noSelectionOrClipboard)
+    }
+}
+
+private struct TestKeychain: KeychainStoring {
+    func apiKey() throws -> String? { "test-key" }
+    func saveAPIKey(_ key: String) throws {}
+    func updateAPIKey(_ key: String) throws {}
+    func deleteAPIKey() throws {}
+}
+
+private final class TestClipboard: ClipboardManaging, @unchecked Sendable {
+    var lastWrite: String?
+
+    func readText() -> String? { nil }
+
+    func writeText(_ text: String) {
+        lastWrite = text
+    }
+}
+
+private final class RequestBox: @unchecked Sendable {
+    var request: LLMRequest?
+}
+
+private final class ControlledStream: @unchecked Sendable {
+    private var continuation: AsyncThrowingStream<LLMStreamEvent, Error>.Continuation?
+
+    var factory: LLMStreamFactory {
+        { [weak self] _, _, _ in
+            AsyncThrowingStream { continuation in
+                self?.continuation = continuation
+            }
+        }
+    }
+
+    func send(_ event: LLMStreamEvent) {
+        continuation?.yield(event)
+    }
+}

@@ -4,6 +4,8 @@
 
 - `swift build` succeeds with no external runtime dependency.
 - `swift test` passes.
+- `xcodebuild -project FloatDude.xcodeproj -scheme FloatDude -destination 'platform=macOS' build` succeeds under full Xcode.
+- The same Xcode scheme runs the XCTest suite with `xcodebuild ... test`.
 - Add deterministic unit tests for prompt construction, SSE framing/decoding, URL normalization, settings serialization, and Keychain error mapping.
 - Add UI or integration coverage for state transitions: idle → panel → streaming → completed/cancelled/error.
 
@@ -29,6 +31,7 @@
 
 ## Security review before handoff
 
+- Run `bash Scripts/secret-scan.sh --staged` before committing and keep the CI scan green.
 - Verify `git diff --cached` contains no API keys or Keychain values.
 - Search source and logs for `Authorization`, `api_key`, and `Bearer` before committing.
 - Confirm no request body, selected text, or response is sent anywhere except the user-configured model endpoint.
