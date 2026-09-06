@@ -42,6 +42,38 @@ final class LLMClientTests: XCTestCase {
         XCTAssertEqual(messages[0]["content"], "Translate the provided text to Chinese. If it is already in Chinese, translate it to English. Return only the translation.")
     }
 
+    func testProductionURLSessionTransportStreamsThroughURLProtocol() async throws {
+        URLProtocolStub.configure(chunks: [
+            Data("data: {\"choices\":[{\"delta\":{\"content\":\"local \"}}]}\n\n".utf8),
+            Data("data: {\"choices\":[{\"delta\":{\"content\":\"transport\"}}]}\n\ndata: [DONE]\n\n".utf8)
+        ])
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [URLProtocolStub.self]
+        let session = URLSession(configuration: configuration)
+        let client = try OpenAIChatCompletionsClient(
+            configuration: LLMConfiguration(
+                baseURL: URL(string: "https://provider.example")!,
+                model: "demo-model"
+            ),
+            apiKey: "test-api-key",
+            session: session
+        )
+
+        var events: [LLMStreamEvent] = []
+        for try await event in client.stream(
+            LLMRequest(action: .ask, context: nil, userPrompt: "local test")
+        ) {
+            events.append(event)
+        }
+
+        XCTAssertEqual(events, [.textDelta("local "), .textDelta("transport"), .completed])
+        let request = try XCTUnwrap(URLProtocolStub.lastRequest)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.absoluteString, "https://provider.example/v1/chat/completions")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Accept"), "text/event-stream")
+    }
+
     func testNormalizesAndRejectsEndpoints() throws {
         let valid = try LLMEndpoint.normalizedBaseURL(URL(string: "https://provider.example///")!)
         XCTAssertEqual(valid.absoluteString, "https://provider.example")
@@ -254,4 +286,63 @@ private final class OneShotSignal: @unchecked Sendable {
         lock.unlock()
         continuation?.resume()
     }
+}
+
+private final class URLProtocolStub: URLProtocol, @unchecked Sendable {
+    private final class State: @unchecked Sendable {
+        let lock = NSLock()
+        var chunks: [Data] = []
+        var request: URLRequest?
+    }
+
+    private static let state = State()
+
+    static var lastRequest: URLRequest? {
+        state.lock.lock()
+        defer { state.lock.unlock() }
+        return state.request
+    }
+
+    static func configure(chunks: [Data]) {
+        state.lock.lock()
+        state.chunks = chunks
+        state.request = nil
+        state.lock.unlock()
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host == "provider.example"
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        let chunks: [Data]
+        Self.state.lock.lock()
+        Self.state.request = request
+        chunks = Self.state.chunks
+        Self.state.lock.unlock()
+
+        guard let url = request.url,
+              let response = HTTPURLResponse(
+                  url: url,
+                  statusCode: 200,
+                  httpVersion: "HTTP/1.1",
+                  headerFields: ["Content-Type": "text/event-stream"]
+              )
+        else {
+            client?.urlProtocol(self, didFailWithError: URLError(.badServerResponse))
+            return
+        }
+
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        for chunk in chunks {
+            client?.urlProtocol(self, didLoad: chunk)
+        }
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }
