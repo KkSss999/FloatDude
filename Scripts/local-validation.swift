@@ -54,6 +54,11 @@ struct LocalValidation {
     private static func validateCoordinatorFlow() async {
         let settings = ValidationSettingsStore()
         let clipboard = ValidationPasteboard()
+        let providerSession = ProviderSession(
+            mode: .thisSessionOnly,
+            keychainStore: ValidationKeychain()
+        )
+        try! providerSession.configure(mode: .thisSessionOnly, apiKey: "validation-key")
         let coordinator = TaskCoordinator(
             contextCapturer: ValidationContextCapturer(),
             streamFactory: { _, _, _ in
@@ -65,7 +70,7 @@ struct LocalValidation {
                 }
             },
             settingsStore: settings,
-            keychainStore: ValidationKeychain(),
+            providerSession: providerSession,
             clipboardManager: clipboard
         )
 

@@ -1,9 +1,41 @@
 import Foundation
 
+enum CredentialMode: String, CaseIterable, Codable, Identifiable, Sendable, Equatable {
+    case noAuthentication
+    case thisSessionOnly
+    case rememberOnThisMac
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .noAuthentication:
+            "No Authentication"
+        case .thisSessionOnly:
+            "This Session Only"
+        case .rememberOnThisMac:
+            "Remember on This Mac"
+        }
+    }
+}
+
 struct AppSettings: Sendable, Equatable {
     var baseURL: URL?
     var model: String
     var hotkeyDescription: String
+    var credentialMode: CredentialMode
+
+    init(
+        baseURL: URL?,
+        model: String,
+        hotkeyDescription: String,
+        credentialMode: CredentialMode = .noAuthentication
+    ) {
+        self.baseURL = baseURL
+        self.model = model
+        self.hotkeyDescription = hotkeyDescription
+        self.credentialMode = credentialMode
+    }
 
     /// Compatibility name for callers that refer to the persisted value as a
     /// shortcut descriptor. The descriptor itself is owned by GlobalHotkey.
@@ -12,9 +44,10 @@ struct AppSettings: Sendable, Equatable {
     }
 
     static let `default` = AppSettings(
-        baseURL: nil,
-        model: "",
-        hotkeyDescription: "Option-Space"
+        baseURL: URL(string: "https://api.deepseek.com/anthropic"),
+        model: "deepseek-v4-flash",
+        hotkeyDescription: "Option-Space",
+        credentialMode: .noAuthentication
     )
 }
 
@@ -56,6 +89,7 @@ final class SettingsStore: SettingsStoring {
         static let baseURL = "floatdude.settings.baseURL"
         static let model = "floatdude.settings.model"
         static let shortcutDescriptor = "floatdude.settings.shortcutDescriptor"
+        static let credentialMode = "floatdude.settings.credentialMode"
     }
 
     private let defaults: UserDefaults
@@ -78,6 +112,7 @@ final class SettingsStore: SettingsStoring {
         }
         defaults.set(validated.model, forKey: Key.model)
         defaults.set(validated.hotkeyDescription, forKey: Key.shortcutDescriptor)
+        defaults.set(validated.credentialMode.rawValue, forKey: Key.credentialMode)
         current = validated
     }
 
@@ -137,14 +172,29 @@ final class SettingsStore: SettingsStoring {
         } else {
             baseURL = nil
         }
-        return AppSettings(baseURL: baseURL, model: model, hotkeyDescription: shortcut)
+        return AppSettings(
+            baseURL: baseURL,
+            model: model,
+            hotkeyDescription: shortcut,
+            credentialMode: settings.credentialMode
+        )
     }
 
     private static func load(from defaults: UserDefaults) -> AppSettings {
         let baseURL = defaults.string(forKey: Key.baseURL).flatMap { try? normalizeBaseURL($0) }
-        let model = defaults.string(forKey: Key.model)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            ?? AppSettings.default.baseURL
+        let model = defaults.string(forKey: Key.model)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? AppSettings.default.model
         let shortcut = defaults.string(forKey: Key.shortcutDescriptor)?.trimmingCharacters(in: .whitespacesAndNewlines)
             ?? AppSettings.default.hotkeyDescription
-        return AppSettings(baseURL: baseURL, model: model, hotkeyDescription: shortcut)
+        let credentialMode = defaults.string(forKey: Key.credentialMode)
+            .flatMap(CredentialMode.init(rawValue:))
+            ?? AppSettings.default.credentialMode
+        return AppSettings(
+            baseURL: baseURL,
+            model: model,
+            hotkeyDescription: shortcut,
+            credentialMode: credentialMode
+        )
     }
 }

@@ -42,6 +42,83 @@ final class LLMClientTests: XCTestCase {
         XCTAssertEqual(messages[0]["content"], "Translate the provided text to Chinese. If it is already in Chinese, translate it to English. Return only the translation.")
     }
 
+    func testAnthropicDialectBuildsMessagesRequestAndStreamsTextDeltas() async throws {
+        let transport = FakeTransport { _ in
+            FakeTransport.response(chunks: [
+                Data("event: message_start\ndata: {\"type\":\"message_start\"}\n\n".utf8),
+                Data("event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}\n\n".utf8),
+                Data("event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\" DeepSeek\"}}\n\n".utf8),
+                Data("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n".utf8)
+            ])
+        }
+        let client = try OpenAIChatCompletionsClient(
+            configuration: LLMConfiguration(
+                baseURL: URL(string: "https://api.deepseek.com/anthropic")!,
+                model: "deepseek-v4-flash"
+            ),
+            apiKey: "test-api-key",
+            transport: transport
+        )
+
+        var events: [LLMStreamEvent] = []
+        for try await event in client.stream(
+            LLMRequest(
+                action: .explain,
+                context: CapturedContext(text: "source", source: .clipboard, applicationName: nil),
+                userPrompt: nil
+            )
+        ) {
+            events.append(event)
+        }
+
+        XCTAssertEqual(events, [.textDelta("Hello"), .textDelta(" DeepSeek"), .completed])
+        let request = try XCTUnwrap(transport.lastRequest)
+        XCTAssertEqual(request.url?.absoluteString, "https://api.deepseek.com/anthropic/v1/messages")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "x-api-key"), "test-api-key")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "anthropic-version"), "2023-06-01")
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+
+        let body = try XCTUnwrap(request.httpBody)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(json["model"] as? String, "deepseek-v4-flash")
+        XCTAssertEqual(json["max_tokens"] as? Int, 4096)
+        XCTAssertEqual(json["stream"] as? Bool, true)
+        XCTAssertEqual(json["system"] as? String, "Explain the provided text clearly and concisely.")
+        let messages = try XCTUnwrap(json["messages"] as? [[String: Any]])
+        let content = try XCTUnwrap(messages[0]["content"] as? [[String: String]])
+        XCTAssertEqual(content[0]["type"], "text")
+        XCTAssertEqual(content[0]["text"], "source")
+    }
+
+    func testNoAuthenticationSendsNoAuthenticationHeaders() async throws {
+        let transport = FakeTransport { _ in
+            FakeTransport.response(chunks: [
+                Data("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n".utf8)
+            ])
+        }
+        let client = try OpenAIChatCompletionsClient(
+            configuration: LLMConfiguration(
+                baseURL: URL(string: "https://provider.example")!,
+                model: "demo-model"
+            ),
+            credentials: ProviderCredentials(mode: .noAuthentication),
+            transport: transport
+        )
+
+        var events: [LLMStreamEvent] = []
+        for try await event in client.stream(
+            LLMRequest(action: .ask, context: nil, userPrompt: "public request")
+        ) {
+            events.append(event)
+        }
+
+        XCTAssertEqual(events, [.completed])
+        let request = try XCTUnwrap(transport.lastRequest)
+        XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
+        XCTAssertNil(request.value(forHTTPHeaderField: "x-api-key"))
+        XCTAssertNil(request.value(forHTTPHeaderField: "anthropic-version"))
+    }
+
     func testProductionURLSessionTransportStreamsThroughURLProtocol() async throws {
         URLProtocolStub.configure(chunks: [
             Data("data: {\"choices\":[{\"delta\":{\"content\":\"local \"}}]}\n\n".utf8),

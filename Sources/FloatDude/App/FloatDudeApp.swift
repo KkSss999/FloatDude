@@ -15,7 +15,7 @@ struct FloatDudeApp: App {
         Settings {
             SettingsView(
                 settingsStore: runtime.settingsStore,
-                keychainStore: runtime.keychainStore,
+                providerSession: runtime.providerSession,
                 hotkeyManager: runtime.hotkeyManager
             )
         }

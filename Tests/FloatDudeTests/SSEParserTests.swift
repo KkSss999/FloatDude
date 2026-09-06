@@ -29,4 +29,16 @@ final class SSEParserTests: XCTestCase {
             XCTAssertEqual(error as? SSEParserError, .invalidUTF8)
         }
     }
+
+    func testPreservesEventFieldForAnthropicMessagesStreams() throws {
+        var parser = SSEParser()
+
+        let events = try parser.append(Data(
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\"}\n\n".utf8
+        ))
+
+        XCTAssertEqual(events, [
+            SSEEvent(data: "{\"type\":\"content_block_delta\"}", event: "content_block_delta")
+        ])
+    }
 }

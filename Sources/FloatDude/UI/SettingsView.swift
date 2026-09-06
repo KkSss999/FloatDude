@@ -1,40 +1,38 @@
 import SwiftUI
 
-/// Dedicated Settings scene content. Secrets are entered into a secure field
-/// and are never loaded into AppSettings or UserDefaults.
+/// Dedicated Settings scene content. API keys are selected explicitly as
+/// either session-only or device-local remembered credentials.
 @MainActor
 struct SettingsView: View {
     private let settingsStore: any SettingsStoring
-    private let keychainStore: any KeychainStoring
+    private let providerSession: any ProviderSessionManaging
     private let hotkeyManager: (any GlobalHotkeyManaging)?
 
     @State private var endpoint: String
     @State private var model: String
+    @State private var credentialMode: CredentialMode
     @State private var apiKey = ""
     @State private var shortcut: String
-    @State private var hasStoredAPIKey: Bool
+    @State private var hasAPIKey: Bool
+    @State private var hasRememberedAPIKey: Bool
     @State private var statusMessage: String?
     @State private var statusIsError = false
 
     init(
         settingsStore: any SettingsStoring,
-        keychainStore: any KeychainStoring = KeychainStore(),
+        providerSession: any ProviderSessionManaging,
         hotkeyManager: (any GlobalHotkeyManaging)? = nil
     ) {
         self.settingsStore = settingsStore
-        self.keychainStore = keychainStore
+        self.providerSession = providerSession
         self.hotkeyManager = hotkeyManager
         let settings = settingsStore.current
         _endpoint = State(initialValue: settings.baseURL?.absoluteString ?? "")
         _model = State(initialValue: settings.model)
+        _credentialMode = State(initialValue: settings.credentialMode)
         _shortcut = State(initialValue: settings.hotkeyDescription)
-        do {
-            _hasStoredAPIKey = State(initialValue: try keychainStore.apiKey() != nil)
-        } catch {
-            _hasStoredAPIKey = State(initialValue: false)
-            _statusMessage = State(initialValue: "The saved API key could not be checked. Try saving it again.")
-            _statusIsError = State(initialValue: true)
-        }
+        _hasAPIKey = State(initialValue: settings.credentialMode != .noAuthentication && providerSession.hasAPIKey)
+        _hasRememberedAPIKey = State(initialValue: providerSession.hasRememberedAPIKey)
     }
 
     var body: some View {
@@ -43,19 +41,50 @@ struct SettingsView: View {
                 TextField("Endpoint URL", text: $endpoint)
                     .textContentType(.URL)
                 TextField("Model", text: $model)
+
+                Picker("Credential mode", selection: $credentialMode) {
+                    ForEach(CredentialMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+
                 SecureField("API key", text: $apiKey)
-                Text("API keys are stored only in the macOS Keychain. Leave blank to keep the saved key.")
+                    .disabled(credentialMode == .noAuthentication)
+
+                Toggle(
+                    "Remember this API key on this Mac",
+                    isOn: Binding(
+                        get: { credentialMode == .rememberOnThisMac },
+                        set: { shouldRemember in
+                            credentialMode = shouldRemember ? .rememberOnThisMac : .thisSessionOnly
+                        }
+                    )
+                )
+                .disabled(credentialMode == .noAuthentication)
+
+                Text(credentialHelpText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                if hasStoredAPIKey {
-                    Label("API key saved", systemImage: "checkmark.seal")
-                        .foregroundStyle(.secondary)
+
+                if hasAPIKey || (credentialMode == .rememberOnThisMac && hasRememberedAPIKey) {
+                    Label(
+                        credentialMode == .rememberOnThisMac && hasRememberedAPIKey
+                            ? "API key loaded from this Mac's Keychain"
+                            : "API key active for this session",
+                        systemImage: "checkmark.seal"
+                    )
+                    .foregroundStyle(.secondary)
                 }
+
                 HStack {
-                    Button("Save API Key") { saveAPIKey() }
-                        .disabled(apiKey.isEmpty)
-                    Button("Delete API Key", role: .destructive) { deleteAPIKey() }
-                        .disabled(!hasStoredAPIKey)
+                    Button("Apply Credentials", action: applyCredentials)
+                        .disabled(
+                            credentialMode == .thisSessionOnly
+                                && apiKey.isEmpty
+                                && !hasAPIKey
+                        )
+                    Button("Delete Remembered Key", role: .destructive, action: deleteAPIKey)
+                        .disabled(credentialMode != .rememberOnThisMac || !hasRememberedAPIKey)
                 }
             }
 
@@ -78,8 +107,27 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
-        .frame(minWidth: 460)
+        .frame(minWidth: 500)
         .navigationTitle("FloatDude Settings")
+        .onChange(of: credentialMode) { _, newMode in
+            if newMode == .noAuthentication {
+                apiKey.removeAll(keepingCapacity: false)
+                hasAPIKey = false
+            } else if newMode != providerSession.mode {
+                hasAPIKey = false
+            }
+        }
+    }
+
+    private var credentialHelpText: String {
+        switch credentialMode {
+        case .noAuthentication:
+            "No Keychain lookup, API key, or authentication header is used."
+        case .thisSessionOnly:
+            "The API key stays in memory only and is cleared when this session ends, is cancelled, or the mode changes."
+        case .rememberOnThisMac:
+            "The API key is saved only to this Mac's Keychain after you explicitly apply this mode."
+        }
     }
 
     private func saveSettings() {
@@ -91,52 +139,76 @@ struct SettingsView: View {
             guard !normalizedShortcut.isEmpty else { throw SettingsValidationError.emptyShortcut }
 
             let parsedShortcut = try GlobalHotkeyDescriptor(parsing: normalizedShortcut)
-
             let oldShortcut = settingsStore.current.hotkeyDescription
-
             if oldShortcut != parsedShortcut.displayName,
                let configurableManager = hotkeyManager as? any ConfigurableGlobalHotkeyManaging {
                 try configurableManager.update(descriptor: parsedShortcut)
             }
 
+            try applyCredentialSelection()
             settingsStore.save(AppSettings(
                 baseURL: normalizedEndpoint,
                 model: normalizedModel,
-                hotkeyDescription: parsedShortcut.displayName
+                hotkeyDescription: parsedShortcut.displayName,
+                credentialMode: credentialMode
             ))
             showSuccess("Settings saved.")
         } catch let error as SettingsValidationError {
             showError(error.localizedDescription)
         } catch let error as GlobalHotkeyDescriptorError {
             showError(error.localizedDescription)
-        } catch {
-            showError("Settings were not saved because the shortcut could not be registered. Choose another shortcut and try again.")
-        }
-    }
-
-    private func saveAPIKey() {
-        do {
-            try keychainStore.saveAPIKey(apiKey)
-            apiKey.removeAll(keepingCapacity: false)
-            hasStoredAPIKey = true
-            showSuccess("API key saved securely.")
+        } catch let error as ProviderSessionError {
+            showError(error.localizedDescription)
         } catch let error as KeychainStoreError {
             showError(error.localizedDescription)
         } catch {
-            showError("The API key could not be saved to Keychain. Try again.")
+            showError("Settings were not saved. Check the credential and shortcut configuration and try again.")
         }
+    }
+
+    private func applyCredentials() {
+        do {
+            try applyCredentialSelection()
+            var settings = settingsStore.current
+            settings.credentialMode = credentialMode
+            settingsStore.save(settings)
+            showSuccess("Credentials applied.")
+        } catch let error as ProviderSessionError {
+            showError(error.localizedDescription)
+        } catch let error as KeychainStoreError {
+            showError(error.localizedDescription)
+        } catch {
+            showError("Credentials could not be applied. Try again.")
+        }
+    }
+
+    private func applyCredentialSelection() throws {
+        let enteredKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        if enteredKey.isEmpty,
+           credentialMode == providerSession.mode,
+           providerSession.hasAPIKey {
+            return
+        }
+        try providerSession.configure(
+            mode: credentialMode,
+            apiKey: enteredKey.isEmpty ? nil : enteredKey
+        )
+        apiKey.removeAll(keepingCapacity: false)
+        hasAPIKey = providerSession.hasAPIKey
+        hasRememberedAPIKey = providerSession.hasRememberedAPIKey
     }
 
     private func deleteAPIKey() {
         do {
-            try keychainStore.deleteAPIKey()
+            try providerSession.deleteRememberedAPIKey()
+            hasAPIKey = false
+            hasRememberedAPIKey = false
             apiKey.removeAll(keepingCapacity: false)
-            hasStoredAPIKey = false
-            showSuccess("API key deleted.")
+            showSuccess("Remembered API key deleted.")
         } catch let error as KeychainStoreError {
             showError(error.localizedDescription)
         } catch {
-            showError("The API key could not be deleted from Keychain. Try again.")
+            showError("The remembered API key could not be deleted. Try again.")
         }
     }
 

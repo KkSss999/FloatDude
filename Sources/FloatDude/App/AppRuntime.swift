@@ -7,7 +7,7 @@ final class AppRuntime: ObservableObject {
     static let shared = AppRuntime()
 
     let settingsStore: SettingsStore
-    let keychainStore: KeychainStore
+    let providerSession: ProviderSession
     let clipboardManager: ClipboardManager
     let contextCapturer: SelectionCapture
     let hotkeyManager: CarbonGlobalHotkey
@@ -21,14 +21,18 @@ final class AppRuntime: ObservableObject {
     init() {
         let settingsStore = SettingsStore()
         let keychainStore = KeychainStore()
+        let providerSession = ProviderSession(
+            mode: settingsStore.current.credentialMode,
+            keychainStore: keychainStore
+        )
         let clipboardManager = ClipboardManager()
         let contextCapturer = SelectionCapture(pasteboard: clipboardManager)
-        let streamFactory: LLMStreamFactory = { request, configuration, apiKey in
+        let streamFactory: LLMStreamFactory = { request, configuration, credentials in
             AsyncThrowingStream { continuation in
                 do {
                     let client = try OpenAIChatCompletionsClient(
                         configuration: configuration,
-                        apiKey: apiKey
+                        credentials: credentials
                     )
                     let task = Task {
                         do {
@@ -53,7 +57,7 @@ final class AppRuntime: ObservableObject {
             contextCapturer: contextCapturer,
             streamFactory: streamFactory,
             settingsStore: settingsStore,
-            keychainStore: keychainStore,
+            providerSession: providerSession,
             clipboardManager: clipboardManager
         )
         let configuredDescriptor = (try? GlobalHotkeyDescriptor(parsing: settingsStore.current.hotkeyDescription))
@@ -71,7 +75,7 @@ final class AppRuntime: ObservableObject {
         )
 
         self.settingsStore = settingsStore
-        self.keychainStore = keychainStore
+        self.providerSession = providerSession
         self.clipboardManager = clipboardManager
         self.contextCapturer = contextCapturer
         self.hotkeyManager = hotkeyManager

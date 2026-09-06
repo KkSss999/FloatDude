@@ -2,6 +2,12 @@ import Foundation
 
 struct SSEEvent: Sendable, Equatable {
     let data: String
+    let event: String?
+
+    init(data: String, event: String? = nil) {
+        self.data = data
+        self.event = event
+    }
 }
 
 enum SSEParserError: Error, Sendable, Equatable {
@@ -12,6 +18,7 @@ enum SSEParserError: Error, Sendable, Equatable {
 struct SSEParser: Sendable {
     private var lineBuffer = Data()
     private var dataLines: [String] = []
+    private var eventName: String?
 
     mutating func append(_ chunk: Data) throws -> [SSEEvent] {
         lineBuffer.append(chunk)
@@ -87,6 +94,8 @@ struct SSEParser: Sendable {
 
         if field == "data" {
             dataLines.append(value)
+        } else if field == "event" {
+            eventName = value
         }
     }
 
@@ -95,7 +104,8 @@ struct SSEParser: Sendable {
             return nil
         }
         defer { dataLines.removeAll(keepingCapacity: true) }
-        return SSEEvent(data: dataLines.joined(separator: "\n"))
+        defer { eventName = nil }
+        return SSEEvent(data: dataLines.joined(separator: "\n"), event: eventName)
     }
 
     private func lineDelimiter(in data: Data) -> (lineEnd: Int, nextIndex: Int, isBlankLine: Bool)? {

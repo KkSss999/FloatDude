@@ -1,6 +1,36 @@
 import Foundation
 import Security
 
+struct ProviderCredentials: Sendable, Equatable {
+    let mode: CredentialMode
+    let apiKey: String?
+
+    init(mode: CredentialMode, apiKey: String? = nil) {
+        self.mode = mode
+        let normalizedKey = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.apiKey = mode == .noAuthentication ? nil : normalizedKey
+    }
+
+    var hasAPIKey: Bool {
+        guard let apiKey else { return false }
+        return !apiKey.isEmpty
+    }
+}
+
+enum ProviderSessionError: LocalizedError, Sendable, Equatable {
+    case sessionClosed
+    case missingAPIKey
+
+    var errorDescription: String? {
+        switch self {
+        case .sessionClosed:
+            "The credential session is closed. Enter the API key again before retrying."
+        case .missingAPIKey:
+            "Enter an API key for the selected credential mode."
+        }
+    }
+}
+
 struct KeychainReadResult: Sendable {
     let status: OSStatus
     let data: Data?
@@ -88,6 +118,129 @@ protocol KeychainStoring: Sendable {
     func saveAPIKey(_ key: String) throws
     func updateAPIKey(_ key: String) throws
     func deleteAPIKey() throws
+}
+
+@MainActor
+protocol ProviderSessionManaging: AnyObject {
+    var mode: CredentialMode { get }
+    var hasAPIKey: Bool { get }
+    var hasRememberedAPIKey: Bool { get }
+    func credentialsForRequest() throws -> ProviderCredentials
+    func configure(mode: CredentialMode, apiKey: String?) throws
+    func reopen() throws
+    func clear()
+    func deleteRememberedAPIKey() throws
+}
+
+/// Owns the in-memory credentials used by provider requests. Keychain is read
+/// only while this session is initialized or explicitly reopened/configured;
+/// request execution never reaches into Keychain.
+@MainActor
+final class ProviderSession: ProviderSessionManaging {
+    private let keychainStore: any KeychainStoring
+    private(set) var mode: CredentialMode
+    private var credentials: ProviderCredentials
+    private var isOpen = false
+    private var initializationError: Error?
+    private(set) var hasRememberedAPIKey = false
+
+    var hasAPIKey: Bool {
+        credentials.hasAPIKey
+    }
+
+    init(
+        mode: CredentialMode,
+        keychainStore: any KeychainStoring
+    ) {
+        self.mode = mode
+        self.keychainStore = keychainStore
+        self.credentials = ProviderCredentials(mode: mode)
+        self.initializationError = nil
+        do {
+            try reopen()
+        } catch {
+            initializationError = error
+        }
+    }
+
+    func credentialsForRequest() throws -> ProviderCredentials {
+        guard isOpen else {
+            if let initializationError {
+                throw initializationError
+            }
+            throw ProviderSessionError.sessionClosed
+        }
+        guard mode == .noAuthentication || credentials.hasAPIKey else {
+            throw ProviderSessionError.missingAPIKey
+        }
+        return credentials
+    }
+
+    func configure(mode: CredentialMode, apiKey: String?) throws {
+        clear()
+        self.mode = mode
+        do {
+            try loadCredentials(apiKey: apiKey)
+            isOpen = true
+            initializationError = nil
+        } catch {
+            isOpen = false
+            initializationError = error
+            throw error
+        }
+    }
+
+    func reopen() throws {
+        clear()
+        do {
+            try loadCredentials(apiKey: nil)
+            isOpen = true
+            initializationError = nil
+        } catch {
+            isOpen = false
+            initializationError = error
+            throw error
+        }
+    }
+
+    func clear() {
+        credentials = ProviderCredentials(mode: mode)
+        isOpen = false
+        initializationError = nil
+    }
+
+    func deleteRememberedAPIKey() throws {
+        try keychainStore.deleteAPIKey()
+        hasRememberedAPIKey = false
+        clear()
+    }
+
+    private func loadCredentials(apiKey: String?) throws {
+        switch mode {
+        case .noAuthentication:
+            credentials = ProviderCredentials(mode: .noAuthentication)
+        case .thisSessionOnly:
+            let sessionCredentials = ProviderCredentials(mode: .thisSessionOnly, apiKey: apiKey)
+            guard sessionCredentials.hasAPIKey else {
+                throw ProviderSessionError.missingAPIKey
+            }
+            credentials = sessionCredentials
+        case .rememberOnThisMac:
+            if let apiKey, !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                try keychainStore.saveAPIKey(apiKey)
+                credentials = ProviderCredentials(mode: .rememberOnThisMac, apiKey: apiKey)
+                hasRememberedAPIKey = true
+            } else {
+                let rememberedKey = try keychainStore.apiKey()
+                let rememberedCredentials = ProviderCredentials(mode: .rememberOnThisMac, apiKey: rememberedKey)
+                guard rememberedCredentials.hasAPIKey else {
+                    throw ProviderSessionError.missingAPIKey
+                }
+                credentials = rememberedCredentials
+                hasRememberedAPIKey = true
+            }
+        }
+    }
 }
 
 struct KeychainStore: KeychainStoring, Sendable {

@@ -37,6 +37,57 @@ private final class TestKeychainBackend: KeychainBackend, @unchecked Sendable {
 }
 
 final class KeychainStoreTests: XCTestCase {
+    @MainActor
+    func testProviderSessionReadsKeychainOnlyForRememberedMode() throws {
+        let backend = TestKeychainBackend()
+        backend.storedData = Data("remembered-key".utf8)
+        let store = KeychainStore(backend: backend, service: "test", account: "api-key")
+
+        let noAuthentication = ProviderSession(mode: .noAuthentication, keychainStore: store)
+        XCTAssertEqual(backend.operations, [])
+        XCTAssertEqual(
+            try noAuthentication.credentialsForRequest(),
+            ProviderCredentials(mode: .noAuthentication)
+        )
+
+        let sessionOnly = ProviderSession(mode: .thisSessionOnly, keychainStore: store)
+        XCTAssertEqual(backend.operations, [])
+        XCTAssertThrowsError(try sessionOnly.credentialsForRequest()) { error in
+            XCTAssertEqual(error as? ProviderSessionError, .missingAPIKey)
+        }
+        try sessionOnly.configure(mode: .thisSessionOnly, apiKey: "session-key")
+        XCTAssertEqual(backend.operations, [])
+        XCTAssertEqual(
+            try sessionOnly.credentialsForRequest(),
+            ProviderCredentials(mode: .thisSessionOnly, apiKey: "session-key")
+        )
+
+        let remembered = ProviderSession(mode: .rememberOnThisMac, keychainStore: store)
+        XCTAssertEqual(backend.operations, ["read"])
+        _ = try remembered.credentialsForRequest()
+        _ = try remembered.credentialsForRequest()
+        XCTAssertEqual(backend.operations, ["read"])
+    }
+
+    @MainActor
+    func testProviderSessionClearsMemoryWhenClosedAndReopensRememberedMode() throws {
+        let backend = TestKeychainBackend()
+        backend.storedData = Data("remembered-key".utf8)
+        let store = KeychainStore(backend: backend, service: "test", account: "api-key")
+        let session = ProviderSession(mode: .rememberOnThisMac, keychainStore: store)
+
+        XCTAssertTrue(session.hasAPIKey)
+        session.clear()
+        XCTAssertFalse(session.hasAPIKey)
+        XCTAssertThrowsError(try session.credentialsForRequest()) { error in
+            XCTAssertEqual(error as? ProviderSessionError, .sessionClosed)
+        }
+
+        try session.reopen()
+        XCTAssertTrue(session.hasAPIKey)
+        XCTAssertEqual(backend.operations, ["read", "read"])
+    }
+
     func testReadSaveUpdateAndDeleteUseInjectedBackend() throws {
         let backend = TestKeychainBackend()
         let store = KeychainStore(backend: backend, service: "test", account: "api-key")

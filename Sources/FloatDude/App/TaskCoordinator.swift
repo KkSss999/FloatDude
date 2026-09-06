@@ -7,7 +7,7 @@ import Combine
 typealias LLMStreamFactory = @Sendable (
     _ request: LLMRequest,
     _ configuration: LLMConfiguration,
-    _ apiKey: String
+    _ credentials: ProviderCredentials
 ) -> AsyncThrowingStream<LLMStreamEvent, Error>
 
 /// MainActor-owned orchestration for exactly one invocation at a time.
@@ -46,7 +46,7 @@ final class TaskCoordinator: ObservableObject {
     private let contextCapturer: any ContextCapturing
     private let streamFactory: LLMStreamFactory
     private let settingsStore: any SettingsStoring
-    private let keychainStore: any KeychainStoring
+    private let providerSession: any ProviderSessionManaging
     private let clipboardManager: any ClipboardManaging
     private var captureTask: Task<Void, Never>?
     private var streamTask: Task<Void, Never>?
@@ -56,14 +56,14 @@ final class TaskCoordinator: ObservableObject {
         contextCapturer: any ContextCapturing,
         streamFactory: @escaping LLMStreamFactory,
         settingsStore: any SettingsStoring,
-        keychainStore: any KeychainStoring,
+        providerSession: any ProviderSessionManaging,
         clipboardManager: any ClipboardManaging,
         metrics: PerformanceMetrics? = nil
     ) {
         self.contextCapturer = contextCapturer
         self.streamFactory = streamFactory
         self.settingsStore = settingsStore
-        self.keychainStore = keychainStore
+        self.providerSession = providerSession
         self.clipboardManager = clipboardManager
         self.metrics = metrics ?? PerformanceMetrics()
     }
@@ -127,15 +127,17 @@ final class TaskCoordinator: ObservableObject {
             return
         }
 
-        let apiKey: String
+        let credentials: ProviderCredentials
         do {
-            guard let storedKey = try keychainStore.apiKey(), !storedKey.isEmpty else {
-                failConfiguration()
-                return
+            do {
+                credentials = try providerSession.credentialsForRequest()
+            } catch ProviderSessionError.sessionClosed {
+                try providerSession.reopen()
+                credentials = try providerSession.credentialsForRequest()
             }
-            apiKey = storedKey
         } catch {
             session.apply(.failed(Self.safeMessage(for: error)))
+            onOpenSettings?()
             return
         }
 
@@ -151,7 +153,7 @@ final class TaskCoordinator: ObservableObject {
 
         streamTask = Task { [weak self, streamFactory] in
             do {
-                for try await event in streamFactory(request, configuration, apiKey) {
+                for try await event in streamFactory(request, configuration, credentials) {
                     guard !Task.isCancelled else { return }
                     self?.receive(event, invocationID: invocationID)
                 }
@@ -159,7 +161,10 @@ final class TaskCoordinator: ObservableObject {
                 return
             } catch {
                 guard !Task.isCancelled else { return }
-                self?.fail(Self.safeMessage(for: error, apiKey: apiKey), invocationID: invocationID)
+                self?.fail(
+                    Self.safeMessage(for: error, apiKey: credentials.apiKey ?? ""),
+                    invocationID: invocationID
+                )
             }
         }
     }
@@ -191,6 +196,7 @@ final class TaskCoordinator: ObservableObject {
     func cancelAndDismiss() {
         activeInvocationID = nil
         cancelTasks()
+        providerSession.clear()
         session.apply(.cancelled)
         onDismissPanel?()
     }
@@ -200,6 +206,7 @@ final class TaskCoordinator: ObservableObject {
     func cancelActiveRequest() {
         activeInvocationID = nil
         cancelTasks()
+        providerSession.clear()
         if session.phase != .cancelled {
             session.apply(.cancelled)
         }
@@ -212,6 +219,7 @@ final class TaskCoordinator: ObservableObject {
     func dismissWithoutCancellation() {
         activeInvocationID = nil
         cancelTasks()
+        providerSession.clear()
         session.apply(.cancelled)
         onDismissPanel?()
     }

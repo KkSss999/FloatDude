@@ -27,7 +27,11 @@ final class TaskCoordinatorTests: XCTestCase {
     }
 
     func testMissingConfigurationOpensSettingsWithoutStartingStream() async {
-        let settings = TestSettingsStore(settings: .default)
+        let settings = TestSettingsStore(settings: AppSettings(
+            baseURL: nil,
+            model: "",
+            hotkeyDescription: "Option-Space"
+        ))
         var didOpenSettings = false
         let coordinator = makeCoordinator(settings: settings)
         coordinator.onOpenSettings = { didOpenSettings = true }
@@ -42,7 +46,12 @@ final class TaskCoordinatorTests: XCTestCase {
 
     func testCancellationDropsLateStreamDeltas() async {
         let gate = ControlledStream()
-        let coordinator = makeCoordinator(stream: gate)
+        let providerSession = ProviderSession(
+            mode: .thisSessionOnly,
+            keychainStore: TestKeychain()
+        )
+        try! providerSession.configure(mode: .thisSessionOnly, apiKey: "test-key")
+        let coordinator = makeCoordinator(stream: gate, providerSession: providerSession)
 
         coordinator.beginInvocation()
         await waitUntil { coordinator.session.phase == .contextCaptured }
@@ -56,6 +65,7 @@ final class TaskCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(coordinator.session.phase, .cancelled)
         XCTAssertEqual(coordinator.session.response, "")
+        XCTAssertFalse(providerSession.hasAPIKey)
     }
 
     private func makeCoordinator(
@@ -67,16 +77,21 @@ final class TaskCoordinatorTests: XCTestCase {
         )),
         requestBox: RequestBox = RequestBox(),
         clipboard: TestClipboard = TestClipboard(),
-        stream: ControlledStream? = nil
+        stream: ControlledStream? = nil,
+        providerSession: ProviderSession? = nil
     ) -> TaskCoordinator {
         let contextCapturer = TestContextCapturer(context: context)
         let keychain = TestKeychain()
+        let providerSession = providerSession ?? ProviderSession(mode: .thisSessionOnly, keychainStore: keychain)
+        if !providerSession.hasAPIKey {
+            try! providerSession.configure(mode: .thisSessionOnly, apiKey: "test-key")
+        }
         if let stream {
             return TaskCoordinator(
                 contextCapturer: contextCapturer,
                 streamFactory: stream.factory,
                 settingsStore: settings,
-                keychainStore: keychain,
+                providerSession: providerSession,
                 clipboardManager: clipboard
             )
         }
@@ -94,7 +109,7 @@ final class TaskCoordinatorTests: XCTestCase {
             contextCapturer: contextCapturer,
             streamFactory: streamFactory,
             settingsStore: settings,
-            keychainStore: keychain,
+            providerSession: providerSession,
             clipboardManager: clipboard
         )
     }

@@ -25,7 +25,8 @@ This repository currently contains the application and architecture scaffold onl
 - Xcode 16 or newer for the native app target and XCTest
 - No third-party runtime dependencies in the initial scaffold
 - Configuration: OpenAI-compatible Chat Completions streaming API
-- Credentials: Keychain only; never `UserDefaults`, source control, or logs
+- Credentials: explicit `No Authentication`, `This Session Only`, or `Remember on This Mac`; Keychain is opt-in and keys never enter `UserDefaults`, source control, or logs
+- Fresh installs default to DeepSeek's Anthropic-compatible endpoint and `deepseek-v4-flash`; only the API key requires user input.
 
 ## Layout
 

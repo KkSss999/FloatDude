@@ -1,12 +1,28 @@
 import Foundation
 
+enum LLMAPIFormat: String, Codable, Sendable, Equatable {
+    case openAIChatCompletions
+    case anthropicMessages
+
+    static func inferred(from baseURL: URL) -> Self {
+        let lastPathComponent = baseURL.path
+            .split(separator: "/")
+            .last
+            .map(String.init)
+            .map { $0.lowercased() }
+        return lastPathComponent == "anthropic" ? .anthropicMessages : .openAIChatCompletions
+    }
+}
+
 struct LLMConfiguration: Sendable, Equatable {
     let baseURL: URL
     let model: String
+    let apiFormat: LLMAPIFormat
 
-    init(baseURL: URL, model: String) {
+    init(baseURL: URL, model: String, apiFormat: LLMAPIFormat? = nil) {
         self.baseURL = baseURL
         self.model = model
+        self.apiFormat = apiFormat ?? .inferred(from: baseURL)
     }
 }
 
@@ -120,6 +136,11 @@ enum LLMEndpoint {
         return normalized.appendingPathComponent("v1").appendingPathComponent("chat/completions")
     }
 
+    static func anthropicMessagesURL(for baseURL: URL) throws -> URL {
+        let normalized = try normalizedBaseURL(baseURL)
+        return normalized.appendingPathComponent("v1").appendingPathComponent("messages")
+    }
+
     private static func isLoopback(_ host: String) -> Bool {
         let lowercased = host.lowercased()
         return lowercased == "localhost"
@@ -139,7 +160,8 @@ enum LLMSecretRedactor {
         let patterns = [
             #"(?i)(authorization\s*:\s*bearer\s+)[^\s,}\]]+"#,
             #"(?i)(bearer\s+)[^\s,}\]]+"#,
-            #"(?i)(api[-_ ]?key\s*[=:]\s*["']?)[^\s,"'}]+"#
+            #"(?i)(api[-_ ]?key\s*[=:]\s*["']?)[^\s,"'}]+"#,
+            #"(?i)(x-api-key\s*:\s*)[^\s,}\]]+"#
         ]
         for pattern in patterns {
             result = result.replacingOccurrences(
@@ -152,7 +174,7 @@ enum LLMSecretRedactor {
     }
 }
 
-/// Provider boundary for an OpenAI-compatible Chat Completions streaming client.
+/// Provider boundary for OpenAI Chat Completions and Anthropic Messages streaming clients.
 protocol LLMClient: Sendable {
     func stream(_ request: LLMRequest) -> AsyncThrowingStream<LLMStreamEvent, Error>
 }

@@ -2,10 +2,10 @@ import Foundation
 
 struct OpenAIChatCompletionsClient: LLMClient, Sendable {
     private let configuration: LLMConfiguration
-    private let apiKey: String
+    private let credentials: ProviderCredentials
     private let transport: any LLMStreamingTransport
     private let prompts: any PromptActionProviding
-    private let completionsURL: URL
+    private let endpointURL: URL
 
     init(
         configuration: LLMConfiguration,
@@ -15,7 +15,21 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
     ) throws {
         try self.init(
             configuration: configuration,
-            apiKey: apiKey,
+            credentials: ProviderCredentials(mode: .thisSessionOnly, apiKey: apiKey),
+            transport: URLSessionStreamingTransport(session: session),
+            prompts: prompts
+        )
+    }
+
+    init(
+        configuration: LLMConfiguration,
+        credentials: ProviderCredentials,
+        session: URLSession = .shared,
+        prompts: any PromptActionProviding = PromptActions()
+    ) throws {
+        try self.init(
+            configuration: configuration,
+            credentials: credentials,
             transport: URLSessionStreamingTransport(session: session),
             prompts: prompts
         )
@@ -27,7 +41,21 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
         transport: any LLMStreamingTransport,
         prompts: any PromptActionProviding = PromptActions()
     ) throws {
-        guard !apiKey.isEmpty else {
+        try self.init(
+            configuration: configuration,
+            credentials: ProviderCredentials(mode: .thisSessionOnly, apiKey: apiKey),
+            transport: transport,
+            prompts: prompts
+        )
+    }
+
+    init(
+        configuration: LLMConfiguration,
+        credentials: ProviderCredentials,
+        transport: any LLMStreamingTransport,
+        prompts: any PromptActionProviding = PromptActions()
+    ) throws {
+        guard credentials.mode == .noAuthentication || credentials.hasAPIKey else {
             throw LLMClientError.missingAPIKey
         }
         guard !configuration.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -35,10 +63,12 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
         }
 
         self.configuration = configuration
-        self.apiKey = apiKey
+        self.credentials = credentials
         self.transport = transport
         self.prompts = prompts
-        self.completionsURL = try LLMEndpoint.chatCompletionsURL(for: configuration.baseURL)
+        self.endpointURL = try configuration.apiFormat == .anthropicMessages
+            ? LLMEndpoint.anthropicMessagesURL(for: configuration.baseURL)
+            : LLMEndpoint.chatCompletionsURL(for: configuration.baseURL)
     }
 
     init(
@@ -50,7 +80,7 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
     ) throws {
         try self.init(
             configuration: LLMConfiguration(baseURL: baseURL, model: model),
-            apiKey: apiKey,
+            credentials: ProviderCredentials(mode: .thisSessionOnly, apiKey: apiKey),
             session: session,
             prompts: prompts
         )
@@ -69,7 +99,7 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
                     if gate.isCancelled || Task.isCancelled || Self.isCancellation(error) {
                         continuation.finish(throwing: LLMClientError.cancelled)
                     } else {
-                        continuation.finish(throwing: Self.redacted(error, apiKey: self.apiKey))
+                        continuation.finish(throwing: Self.redacted(error, apiKey: self.credentials.apiKey ?? ""))
                     }
                 }
             }
@@ -87,11 +117,25 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
         continuation: AsyncThrowingStream<LLMStreamEvent, Error>.Continuation,
         gate: StreamCancellationGate
     ) async throws {
-        var urlRequest = URLRequest(url: completionsURL)
+        var urlRequest = URLRequest(url: endpointURL)
         urlRequest.httpMethod = "POST"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
         urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        switch credentials.mode {
+        case .noAuthentication:
+            break
+        case .thisSessionOnly, .rememberOnThisMac:
+            guard let apiKey = credentials.apiKey, !apiKey.isEmpty else {
+                throw LLMClientError.missingAPIKey
+            }
+            switch configuration.apiFormat {
+            case .openAIChatCompletions:
+                urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+            case .anthropicMessages:
+                urlRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+                urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+            }
+        }
         urlRequest.httpBody = try requestBody(for: request)
 
         let response = try await transport.open(urlRequest)
@@ -121,7 +165,7 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
             let body = try await collect(response.body, gate: gate, limit: 64 * 1024)
             let message = LLMSecretRedactor.redact(
                 Self.providerMessage(from: body) ?? "",
-                apiKey: apiKey
+                apiKey: credentials.apiKey ?? ""
             )
             throw LLMClientError.httpStatus(response.statusCode, message)
         }
@@ -157,6 +201,30 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
         gate: StreamCancellationGate
     ) throws {
         try checkCancellation(gate)
+        switch configuration.apiFormat {
+        case .openAIChatCompletions:
+            try emitOpenAI(
+                event,
+                completed: &completed,
+                continuation: continuation,
+                gate: gate
+            )
+        case .anthropicMessages:
+            try emitAnthropic(
+                event,
+                completed: &completed,
+                continuation: continuation,
+                gate: gate
+            )
+        }
+    }
+
+    private func emitOpenAI(
+        _ event: SSEEvent,
+        completed: inout Bool,
+        continuation: AsyncThrowingStream<LLMStreamEvent, Error>.Continuation,
+        gate: StreamCancellationGate
+    ) throws {
         if event.data == "[DONE]" {
             if !completed {
                 _ = continuation.yield(.completed)
@@ -164,7 +232,6 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
             }
             return
         }
-
         guard let data = event.data.data(using: .utf8) else {
             throw LLMClientError.malformedPayload
         }
@@ -176,7 +243,7 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
         }
 
         if let providerError = chunk.error {
-            let message = LLMSecretRedactor.redact(providerError.message, apiKey: apiKey)
+            let message = LLMSecretRedactor.redact(providerError.message, apiKey: credentials.apiKey ?? "")
             throw LLMClientError.provider(message)
         }
 
@@ -186,6 +253,48 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
             }
             try checkCancellation(gate)
             _ = continuation.yield(.textDelta(content))
+        }
+    }
+
+    private func emitAnthropic(
+        _ event: SSEEvent,
+        completed: inout Bool,
+        continuation: AsyncThrowingStream<LLMStreamEvent, Error>.Continuation,
+        gate: StreamCancellationGate
+    ) throws {
+        guard let data = event.data.data(using: .utf8) else {
+            throw LLMClientError.malformedPayload
+        }
+
+        let message: AnthropicStreamEvent
+        do {
+            message = try JSONDecoder().decode(AnthropicStreamEvent.self, from: data)
+        } catch {
+            throw LLMClientError.malformedPayload
+        }
+
+        switch message.type {
+        case "message_stop":
+            if !completed {
+                _ = continuation.yield(.completed)
+                completed = true
+            }
+        case "error":
+            let providerMessage = message.error?.message ?? "Unknown provider error"
+            throw LLMClientError.provider(
+                LLMSecretRedactor.redact(providerMessage, apiKey: credentials.apiKey ?? "")
+            )
+        case "content_block_delta":
+            guard message.delta?.type == "text_delta",
+                  let text = message.delta?.text,
+                  !text.isEmpty
+            else { return }
+            try checkCancellation(gate)
+            _ = continuation.yield(.textDelta(text))
+        default:
+            // message_start, content_block_start, message_delta, ping, and
+            // other metadata events do not contribute visible answer text.
+            return
         }
     }
 
@@ -204,15 +313,30 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
             userContent = "Please respond to the requested action."
         }
 
-        let body = ChatCompletionRequest(
-            model: configuration.model,
-            stream: true,
-            messages: [
-                .init(role: "system", content: prompts.systemInstruction(for: request.action)),
-                .init(role: "user", content: userContent)
-            ]
-        )
-        return try JSONEncoder().encode(body)
+        let systemInstruction = prompts.systemInstruction(for: request.action)
+        switch configuration.apiFormat {
+        case .openAIChatCompletions:
+            let body = ChatCompletionRequest(
+                model: configuration.model,
+                stream: true,
+                messages: [
+                    .init(role: "system", content: systemInstruction),
+                    .init(role: "user", content: userContent)
+                ]
+            )
+            return try JSONEncoder().encode(body)
+        case .anthropicMessages:
+            let body = AnthropicMessagesRequest(
+                model: configuration.model,
+                maxTokens: 4096,
+                system: systemInstruction,
+                stream: true,
+                messages: [
+                    .init(role: "user", content: [.init(type: "text", text: userContent)])
+                ]
+            )
+            return try JSONEncoder().encode(body)
+        }
     }
 
     private func collect(
@@ -281,6 +405,32 @@ private struct ChatCompletionRequest: Encodable, Sendable {
     }
 }
 
+private struct AnthropicMessagesRequest: Encodable, Sendable {
+    let model: String
+    let maxTokens: Int
+    let system: String
+    let stream: Bool
+    let messages: [Message]
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case maxTokens = "max_tokens"
+        case system
+        case stream
+        case messages
+    }
+
+    struct Message: Encodable, Sendable {
+        let role: String
+        let content: [ContentBlock]
+    }
+
+    struct ContentBlock: Encodable, Sendable {
+        let type: String
+        let text: String
+    }
+}
+
 private struct ChatCompletionChunk: Decodable, Sendable {
     let choices: [Choice]?
     let error: ProviderError?
@@ -291,6 +441,17 @@ private struct ChatCompletionChunk: Decodable, Sendable {
 
     struct Delta: Decodable, Sendable {
         let content: String?
+    }
+}
+
+private struct AnthropicStreamEvent: Decodable, Sendable {
+    let type: String
+    let delta: Delta?
+    let error: ProviderError?
+
+    struct Delta: Decodable, Sendable {
+        let type: String?
+        let text: String?
     }
 }
 

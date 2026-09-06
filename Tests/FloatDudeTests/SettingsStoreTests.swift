@@ -4,6 +4,16 @@ import XCTest
 
 @MainActor
 final class SettingsStoreTests: XCTestCase {
+    func testFreshSettingsDefaultToNoAuthentication() throws {
+        let suiteName = "FloatDude.SettingsStoreTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let store = SettingsStore(defaults: defaults)
+        XCTAssertEqual(store.current.credentialMode, .noAuthentication)
+        XCTAssertNil(defaults.persistentDomain(forName: suiteName))
+    }
+
     func testSettingsRoundTripUsesOnlyTheThreeAllowedUserDefaultsValues() throws {
         let suiteName = "FloatDude.SettingsStoreTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
@@ -13,7 +23,8 @@ final class SettingsStoreTests: XCTestCase {
         let settings = AppSettings(
             baseURL: URL(string: "HTTPS://API.Example.com/v1/"),
             model: "  gpt-test  ",
-            hotkeyDescription: "  Option-Space  "
+            hotkeyDescription: "  Option-Space  ",
+            credentialMode: .thisSessionOnly
         )
         store.save(settings)
 
@@ -22,17 +33,20 @@ final class SettingsStoreTests: XCTestCase {
             "floatdude.settings.baseURL",
             "floatdude.settings.model",
             "floatdude.settings.shortcutDescriptor",
+            "floatdude.settings.credentialMode",
         ])
         XCTAssertEqual(persisted["floatdude.settings.baseURL"] as? String, "https://api.example.com/v1")
         XCTAssertEqual(persisted["floatdude.settings.model"] as? String, "gpt-test")
         XCTAssertEqual(persisted["floatdude.settings.shortcutDescriptor"] as? String, "Option-Space")
+        XCTAssertEqual(persisted["floatdude.settings.credentialMode"] as? String, CredentialMode.thisSessionOnly.rawValue)
         XCTAssertFalse(persisted.values.contains { String(describing: $0).contains("secret") })
 
         let reloaded = SettingsStore(defaults: defaults)
         XCTAssertEqual(reloaded.current, AppSettings(
             baseURL: URL(string: "https://api.example.com/v1"),
             model: "gpt-test",
-            hotkeyDescription: "Option-Space"
+            hotkeyDescription: "Option-Space",
+            credentialMode: .thisSessionOnly
         ))
     }
 
