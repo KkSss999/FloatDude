@@ -16,6 +16,24 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertNil(defaults.persistentDomain(forName: suiteName))
     }
 
+    func testMigratesLegacyNoAuthDeepSeekDefaultWithoutChangingCustomNoAuthEndpoints() throws {
+        let deepSeekSuite = "FloatDude.SettingsStoreTests.\(UUID().uuidString)"
+        let deepSeekDefaults = try XCTUnwrap(UserDefaults(suiteName: deepSeekSuite))
+        defer { deepSeekDefaults.removePersistentDomain(forName: deepSeekSuite) }
+        deepSeekDefaults.set("https://api.deepseek.com/anthropic", forKey: "floatdude.settings.baseURL")
+        deepSeekDefaults.set("noAuthentication", forKey: "floatdude.settings.credentialMode")
+
+        XCTAssertEqual(SettingsStore(defaults: deepSeekDefaults).current.credentialMode, .thisSessionOnly)
+
+        let localSuite = "FloatDude.SettingsStoreTests.\(UUID().uuidString)"
+        let localDefaults = try XCTUnwrap(UserDefaults(suiteName: localSuite))
+        defer { localDefaults.removePersistentDomain(forName: localSuite) }
+        localDefaults.set("http://127.0.0.1:11434", forKey: "floatdude.settings.baseURL")
+        localDefaults.set("noAuthentication", forKey: "floatdude.settings.credentialMode")
+
+        XCTAssertEqual(SettingsStore(defaults: localDefaults).current.credentialMode, .noAuthentication)
+    }
+
     func testSettingsRoundTripUsesOnlyTheThreeAllowedUserDefaultsValues() throws {
         let suiteName = "FloatDude.SettingsStoreTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

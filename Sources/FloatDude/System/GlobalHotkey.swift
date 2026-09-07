@@ -190,21 +190,24 @@ protocol RecoverableGlobalHotkeyManaging: GlobalHotkeyManaging {
 final class CarbonGlobalHotkey: RecoverableGlobalHotkeyManaging, ConfigurableGlobalHotkeyManaging {
     typealias Handler = @MainActor @Sendable () -> Void
 
-    private static let eventSignature: OSType = 0x4644_484B // "FDHK"
-    private static let eventID: UInt32 = 1
+    nonisolated static let eventSignature: OSType = 0x4644_484B // "FDHK"
+    nonisolated static let defaultEventID: UInt32 = 1
 
     private(set) var descriptor: GlobalHotkeyDescriptor
 
     private let handler: Handler
+    private let hotKeyID: EventHotKeyID
     private var hotKey: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
     private var handlerBox: HandlerBox?
 
     init(
         descriptor: GlobalHotkeyDescriptor = .optionSpace,
+        eventID: UInt32 = CarbonGlobalHotkey.defaultEventID,
         handler: @escaping Handler
     ) {
         self.descriptor = descriptor
+        self.hotKeyID = EventHotKeyID(signature: Self.eventSignature, id: eventID)
         self.handler = handler
     }
 
@@ -241,14 +244,15 @@ final class CarbonGlobalHotkey: RecoverableGlobalHotkeyManaging, ConfigurableGlo
             try unregisterReportingError()
         }
 
-        let box = HandlerBox(handler: handler)
+        let box = HandlerBox(handler: handler, hotKeyID: hotKeyID)
         var eventTypes = [EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
         )]
         var installedHandler: EventHandlerRef?
+        let applicationTarget = GetApplicationEventTarget()
         let installStatus = InstallEventHandler(
-            GetEventDispatcherTarget(),
+            applicationTarget,
             carbonHotkeyEventHandler,
             eventTypes.count,
             &eventTypes,
@@ -260,15 +264,11 @@ final class CarbonGlobalHotkey: RecoverableGlobalHotkeyManaging, ConfigurableGlo
         }
 
         var registeredHotKey: EventHotKeyRef?
-        let hotKeyID = EventHotKeyID(
-            signature: Self.eventSignature,
-            id: Self.eventID
-        )
         let registerStatus = RegisterEventHotKey(
             newDescriptor.keyCode,
             newDescriptor.modifiers,
             hotKeyID,
-            GetEventDispatcherTarget(),
+            applicationTarget,
             0,
             &registeredHotKey
         )
@@ -318,9 +318,11 @@ final class CarbonGlobalHotkey: RecoverableGlobalHotkeyManaging, ConfigurableGlo
 
 private final class HandlerBox: @unchecked Sendable {
     let handler: CarbonGlobalHotkey.Handler
+    let hotKeyID: EventHotKeyID
 
-    init(handler: @escaping CarbonGlobalHotkey.Handler) {
+    init(handler: @escaping CarbonGlobalHotkey.Handler, hotKeyID: EventHotKeyID) {
         self.handler = handler
+        self.hotKeyID = hotKeyID
     }
 
     func invoke() {
@@ -332,10 +334,27 @@ private final class HandlerBox: @unchecked Sendable {
 
 private func carbonHotkeyEventHandler(
     _: EventHandlerCallRef?,
-    _: EventRef?,
+    event: EventRef?,
     userData: UnsafeMutableRawPointer?
 ) -> OSStatus {
-    guard let userData else { return noErr }
-    Unmanaged<HandlerBox>.fromOpaque(userData).takeUnretainedValue().invoke()
+    guard let event, let userData else { return OSStatus(eventNotHandledErr) }
+    var hotKeyID = EventHotKeyID()
+    let status = GetEventParameter(
+        event,
+        EventParamName(kEventParamDirectObject),
+        EventParamType(typeEventHotKeyID),
+        nil,
+        MemoryLayout<EventHotKeyID>.size,
+        nil,
+        &hotKeyID
+    )
+    let box = Unmanaged<HandlerBox>.fromOpaque(userData).takeUnretainedValue()
+    guard status == noErr,
+          hotKeyID.signature == box.hotKeyID.signature,
+          hotKeyID.id == box.hotKeyID.id
+    else {
+        return OSStatus(eventNotHandledErr)
+    }
+    box.invoke()
     return noErr
 }

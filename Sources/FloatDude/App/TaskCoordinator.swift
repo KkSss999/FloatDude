@@ -199,6 +199,10 @@ final class TaskCoordinator: ObservableObject {
         clipboardManager.writeText(session.response)
     }
 
+    func openSettings() {
+        onOpenSettings?()
+    }
+
     func cancelAndDismiss() {
         activeInvocationID = nil
         cancelTasks()

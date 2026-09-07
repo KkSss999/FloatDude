@@ -96,14 +96,30 @@ struct WindowPlacementCalculator: Sendable {
             width: cursorAvoidance,
             height: cursorAvoidance
         )
-        let forbiddenRect = selectionRect.map { $0.union(cursorRect) } ?? cursorRect
+        let anchorRect = selectionRect ?? cursorRect
+        let forbiddenRects = selectionRect.map { [$0, cursorRect] } ?? [cursorRect]
         let desiredOrigin = CGPoint(
-            x: cursorLocation.x + cursorGap,
-            y: cursorLocation.y - fittedSize.height - cursorGap
+            x: anchorRect.minX,
+            y: anchorRect.minY - fittedSize.height - cursorGap
         )
 
-        let candidateOrigins = [
+        let anchorOrigins = [
             desiredOrigin,
+            CGPoint(x: anchorRect.minX, y: anchorRect.maxY + cursorGap),
+            CGPoint(
+                x: anchorRect.maxX + cursorGap,
+                y: anchorRect.midY - fittedSize.height / 2
+            ),
+            CGPoint(
+                x: anchorRect.minX - fittedSize.width - cursorGap,
+                y: anchorRect.midY - fittedSize.height / 2
+            )
+        ]
+        let cursorFallbackOrigins = [
+            CGPoint(
+                x: cursorLocation.x + cursorGap,
+                y: cursorLocation.y - fittedSize.height - cursorGap
+            ),
             CGPoint(
                 x: cursorLocation.x - fittedSize.width - cursorGap,
                 y: cursorLocation.y - fittedSize.height - cursorGap
@@ -112,25 +128,14 @@ struct WindowPlacementCalculator: Sendable {
             CGPoint(
                 x: cursorLocation.x - fittedSize.width - cursorGap,
                 y: cursorLocation.y + cursorGap
-            ),
-            CGPoint(
-                x: forbiddenRect.maxX + cursorGap,
-                y: forbiddenRect.midY - fittedSize.height / 2
-            ),
-            CGPoint(
-                x: forbiddenRect.minX - fittedSize.width - cursorGap,
-                y: forbiddenRect.midY - fittedSize.height / 2
-            ),
-            CGPoint(x: forbiddenRect.midX - fittedSize.width / 2, y: forbiddenRect.maxY + cursorGap),
-            CGPoint(
-                x: forbiddenRect.midX - fittedSize.width / 2,
-                y: forbiddenRect.minY - fittedSize.height - cursorGap
             )
-        ].map { clamp($0, panelSize: fittedSize, to: safeFrame) }
+        ]
+        let candidateOrigins = (anchorOrigins + cursorFallbackOrigins)
+            .map { clamp($0, panelSize: fittedSize, to: safeFrame) }
 
         return candidateOrigins.min { lhs, rhs in
-            score(origin: lhs, panelSize: fittedSize, forbidden: forbiddenRect, desired: desiredOrigin)
-                < score(origin: rhs, panelSize: fittedSize, forbidden: forbiddenRect, desired: desiredOrigin)
+            score(origin: lhs, panelSize: fittedSize, forbidden: forbiddenRects, desired: desiredOrigin)
+                < score(origin: rhs, panelSize: fittedSize, forbidden: forbiddenRects, desired: desiredOrigin)
         } ?? clamp(desiredOrigin, panelSize: fittedSize, to: safeFrame)
     }
 
@@ -148,12 +153,14 @@ struct WindowPlacementCalculator: Sendable {
     private static func score(
         origin: CGPoint,
         panelSize: CGSize,
-        forbidden: CGRect,
+        forbidden: [CGRect],
         desired: CGPoint
     ) -> CGFloat {
         let panelRect = CGRect(origin: origin, size: panelSize)
-        let overlap = panelRect.intersection(forbidden)
-        let overlapArea = overlap.isNull ? 0 : overlap.width * overlap.height
+        let overlapArea = forbidden.reduce(CGFloat.zero) { result, rect in
+            let overlap = panelRect.intersection(rect)
+            return result + (overlap.isNull ? 0 : overlap.width * overlap.height)
+        }
         let distance = hypot(origin.x - desired.x, origin.y - desired.y)
         return overlapArea * 1_000_000 + distance
     }

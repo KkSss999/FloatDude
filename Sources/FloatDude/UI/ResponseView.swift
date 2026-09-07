@@ -8,19 +8,22 @@ struct ResponseView: View {
     let onCopy: ((String) -> Void)?
     let onCancel: (() -> Void)?
     let onRetry: (() -> Void)?
+    let onOpenSettings: (() -> Void)?
 
     init(
         response: String,
         state: FloatingPanelState = .completed(text: ""),
         onCopy: ((String) -> Void)? = nil,
         onCancel: (() -> Void)? = nil,
-        onRetry: (() -> Void)? = nil
+        onRetry: (() -> Void)? = nil,
+        onOpenSettings: (() -> Void)? = nil
     ) {
         self.response = response
         self.state = state
         self.onCopy = onCopy
         self.onCancel = onCancel
         self.onRetry = onRetry
+        self.onOpenSettings = onOpenSettings
     }
 
     private var visibleResponse: String {
@@ -145,6 +148,11 @@ struct ResponseView: View {
                 Button("Try Again", action: { onRetry?() })
                     .buttonStyle(.borderedProminent)
                     .disabled(onRetry == nil)
+                if case .error = state {
+                    Button("Settings…", action: { onOpenSettings?() })
+                        .buttonStyle(.bordered)
+                        .disabled(onOpenSettings == nil)
+                }
                 Spacer(minLength: 8)
                 escButton
             }

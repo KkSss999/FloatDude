@@ -56,6 +56,38 @@ final class WindowPositionerTests: XCTestCase {
         XCTAssertFalse(CGRect(origin: origin, size: panelSize).contains(cursor))
     }
 
+    func testSelectionBoundsBecomePrimaryAnchorWhenCursorIsFarAway() {
+        let panelSize = CGSize(width: 300, height: 180)
+        let selection = CGRect(x: 180, y: 520, width: 220, height: 24)
+
+        let origin = WindowPlacementCalculator.origin(
+            forPanelSize: panelSize,
+            cursorLocation: CGPoint(x: 1_050, y: 720),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1_200, height: 800),
+            avoiding: selection
+        )
+
+        XCTAssertEqual(origin.x, selection.minX, accuracy: 0.5)
+        XCTAssertEqual(origin.y, selection.minY - panelSize.height - 14, accuracy: 0.5)
+        XCTAssertFalse(CGRect(origin: origin, size: panelSize).intersects(selection))
+    }
+
+    func testSelectionAnchorFlipsAboveNearBottomScreenEdge() {
+        let panelSize = CGSize(width: 300, height: 220)
+        let selection = CGRect(x: 180, y: 24, width: 160, height: 24)
+
+        let origin = WindowPlacementCalculator.origin(
+            forPanelSize: panelSize,
+            cursorLocation: CGPoint(x: 1_000, y: 700),
+            visibleFrame: CGRect(x: 0, y: 0, width: 1_200, height: 800),
+            avoiding: selection
+        )
+
+        XCTAssertEqual(origin.x, selection.minX, accuracy: 0.5)
+        XCTAssertEqual(origin.y, selection.maxY + 14, accuracy: 0.5)
+        XCTAssertFalse(CGRect(origin: origin, size: panelSize).intersects(selection))
+    }
+
     func testOversizedPanelIsFittedToVisibleFrame() {
         let size = WindowPlacementCalculator.fittedPanelSize(
             CGSize(width: 1200, height: 900),

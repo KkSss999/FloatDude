@@ -13,11 +13,13 @@
 
 | Scenario | Expected result |
 | --- | --- |
-| Shortcut in Safari, Xcode, Terminal, and TextEdit | One panel appears near the cursor; no duplicate panels |
-| Selected text available | Preview contains the selected text and labels its source |
+| Shortcut in Safari, Xcode, Terminal, and TextEdit | One panel appears at the selection anchor, or the pointer fallback when bounds are unavailable; no duplicate panels |
+| Selected text available | Preview contains the selected text, labels its source, and anchors the panel beside the selection rather than a distant pointer |
 | Accessibility denied | Clear non-blocking permission guidance, then clipboard or input fallback |
 | `Esc` during streaming | Panel closes and cancels the request |
-| Click outside the panel | Panel dismisses without retaining sensitive context in visible UI |
+| Click outside the panel | Key panel dismisses without retaining sensitive context in visible UI |
+| Drag panel background | Panel moves freely; response expansion preserves the dragged top anchor |
+| Missing/invalid credential | Human-readable error exposes a working Settings button; legacy default DeepSeek/NoAuth state migrates to Session Only |
 | Copy response | Pasteboard receives exactly the final visible response |
 | Invalid endpoint/key | Human-readable error; key and Authorization header never rendered or logged |
 | Credential modes | No Authentication sends no header; Session Only survives panel dismissal but not app relaunch; Remember on This Mac is Keychain-only |

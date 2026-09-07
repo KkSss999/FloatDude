@@ -45,7 +45,7 @@ The visual references suggest an upper bubble and a response sheet. The implemen
 | Error | 400 pt wide; 196–260 pt high | Actionable error, retry, and Settings path when relevant |
 
 - Permit a width range of 336–456 pt for small displays and accessibility text sizes.
-- Place the panel beside the pointer while keeping it fully on the active display. It must not cover the selected text unless screen edges force it.
+- When Accessibility provides selection bounds, anchor the panel to that selection: below first, then above or beside it without covering the text. Fall back to the pointer only when selection geometry is unavailable. Keep the panel fully on the active display.
 - Truncate previews after two lines; preserve the complete captured text for the model request, not for visible UI.
 - Settings belong in the menu-bar item or a dedicated Settings scene, never in the task panel.
 

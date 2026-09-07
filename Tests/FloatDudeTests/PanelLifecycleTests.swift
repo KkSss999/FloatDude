@@ -1,3 +1,5 @@
+import AppKit
+import SwiftUI
 import XCTest
 @testable import FloatDude
 
@@ -51,6 +53,44 @@ final class PanelLifecycleTests: XCTestCase {
         XCTAssertEqual(recorder.dismissCount, 1)
         XCTAssertEqual(recorder.cancelCount, 0)
     }
+
+    @MainActor
+    func testPhysicalPanelIsMovableAndResignKeyDismissesIt() {
+        let recorder = PanelLifecycleHookRecorder()
+        let controller = FloatingPanelController(
+            positioner: FixedWindowPositioner(),
+            onDismiss: { _ in recorder.dismissCount += 1 },
+            onCancel: { _ in recorder.cancelCount += 1 }
+        )
+
+        controller.present(content: { Text("Test") }, panelSize: CGSize(width: 300, height: 180))
+        let panel = controller.window
+        XCTAssertNotNil(panel)
+        XCTAssertTrue(panel?.canBecomeKey == true)
+        XCTAssertTrue(panel?.isKeyWindow == true)
+        XCTAssertTrue(panel?.isMovable == true)
+        XCTAssertTrue(panel?.isMovableByWindowBackground == true)
+
+        controller.windowDidResignKey(Notification(name: NSWindow.didResignKeyNotification))
+        XCTAssertFalse(controller.isPresented)
+        XCTAssertEqual(recorder.cancelCount, 1)
+        XCTAssertEqual(recorder.dismissCount, 1)
+    }
+
+    @MainActor
+    func testPanelResizePreservesTopAnchorAfterUserMovement() throws {
+        let controller = FloatingPanelController(positioner: FixedWindowPositioner())
+        controller.present(content: { Text("Test") }, panelSize: CGSize(width: 300, height: 180))
+        let panel = try XCTUnwrap(controller.window)
+        panel.setFrameOrigin(CGPoint(x: 300, y: 300))
+        let originalTop = panel.frame.maxY
+
+        controller.update(panelSize: CGSize(width: 300, height: 260))
+
+        XCTAssertEqual(panel.frame.minX, 300, accuracy: 0.5)
+        XCTAssertEqual(panel.frame.maxY, originalTop, accuracy: 0.5)
+        controller.dismiss()
+    }
 }
 
 @MainActor
@@ -59,4 +99,15 @@ private final class PanelLifecycleHookRecorder {
     var reasons: [PanelDismissReason] = []
     var dismissCount = 0
     var cancelCount = 0
+}
+
+@MainActor
+private struct FixedWindowPositioner: WindowPositioning {
+    func origin(forPanelSize size: CGSize) -> CGPoint {
+        CGPoint(x: 300, y: 300)
+    }
+
+    func fittedPanelSize(for size: CGSize) -> CGSize {
+        size
+    }
 }

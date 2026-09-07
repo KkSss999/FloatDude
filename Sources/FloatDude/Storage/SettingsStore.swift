@@ -187,9 +187,20 @@ final class SettingsStore: SettingsStoring {
             ?? AppSettings.default.model
         let shortcut = defaults.string(forKey: Key.shortcutDescriptor)?.trimmingCharacters(in: .whitespacesAndNewlines)
             ?? AppSettings.default.hotkeyDescription
-        let credentialMode = defaults.string(forKey: Key.credentialMode)
+        let storedCredentialMode = defaults.string(forKey: Key.credentialMode)
             .flatMap(CredentialMode.init(rawValue:))
             ?? AppSettings.default.credentialMode
+        let credentialMode: CredentialMode
+        if storedCredentialMode == .noAuthentication,
+           baseURL == AppSettings.default.baseURL {
+            // Early v0.1 builds persisted No Authentication even though the
+            // default DeepSeek endpoint requires x-api-key. Migrate only this
+            // impossible built-in combination; custom no-auth endpoints stay
+            // untouched.
+            credentialMode = .thisSessionOnly
+        } else {
+            credentialMode = storedCredentialMode
+        }
         return AppSettings(
             baseURL: baseURL,
             model: model,

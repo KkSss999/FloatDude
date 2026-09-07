@@ -89,8 +89,8 @@ final class AppRuntime: ObservableObject {
         coordinator.onDismissPanel = { [weak self] in
             self?.panelController.dismiss()
         }
-        coordinator.onOpenSettings = {
-            NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+        coordinator.onOpenSettings = { [weak self] in
+            self?.openSettings()
         }
     }
 
@@ -111,6 +111,17 @@ final class AppRuntime: ObservableObject {
         providerSession.clear()
         panelController.dismiss()
         hotkeyManager.unregister()
+    }
+
+    func openSettings() {
+        NSApp.activate(ignoringOtherApps: true)
+        if NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
+            return
+        }
+        if NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil) {
+            return
+        }
+        startupError = "Settings could not be opened. Use the FloatDude menu-bar item and choose Settings…"
     }
 
     private func presentPanel() {

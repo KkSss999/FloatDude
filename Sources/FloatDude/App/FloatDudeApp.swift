@@ -23,7 +23,6 @@ struct FloatDudeApp: App {
 }
 
 private struct MenuBarView: View {
-    @Environment(\.openSettings) private var openSettings
     @ObservedObject var runtime: AppRuntime
 
     var body: some View {
@@ -39,8 +38,8 @@ private struct MenuBarView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Divider()
-            Button("Settings…") {
-                openSettings()
+            SettingsLink {
+                Text("Settings…")
             }
             Button("Quit FloatDude") {
                 NSApplication.shared.terminate(nil)

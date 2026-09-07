@@ -54,7 +54,8 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
             AnyView(FloatingPanel(content: content)),
             panelSize: panelSize,
             avoiding: selectionRect,
-            activateForInput: activateForInput
+            activateForInput: activateForInput,
+            reposition: true
         )
     }
 
@@ -62,20 +63,21 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
         _ content: AnyView,
         panelSize: CGSize = FloatingPanelController.defaultPanelSize,
         avoiding selectionRect: CGRect? = nil,
-        activateForInput: Bool = false
+        activateForInput: Bool = false,
+        reposition: Bool = true
     ) {
         self.content = content
         requestedPanelSize = panelSize
         self.selectionRect = selectionRect
         _ = lifecycle.present()
-        showPhysicalPanel(activateForInput: activateForInput)
+        showPhysicalPanel(activateForInput: activateForInput, reposition: reposition)
     }
 
     func update(panelSize: CGSize, avoiding selectionRect: CGRect? = nil) {
         requestedPanelSize = panelSize
         self.selectionRect = selectionRect
         guard lifecycle.isPresented else { return }
-        showPhysicalPanel()
+        showPhysicalPanel(reposition: false)
     }
 
     /// The coordinator calls this from its global-hotkey handler. A shortcut
@@ -86,7 +88,7 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
             _ = lifecycle.handle(.shortcut)
         } else if content != nil {
             _ = lifecycle.handle(.shortcut)
-            showPhysicalPanel()
+            showPhysicalPanel(reposition: true)
         }
     }
 
@@ -113,25 +115,43 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
         return false
     }
 
-    private func showPhysicalPanel() {
-        showPhysicalPanel(activateForInput: false)
+    private func showPhysicalPanel(reposition: Bool) {
+        showPhysicalPanel(activateForInput: false, reposition: reposition)
     }
 
-    private func showPhysicalPanel(activateForInput: Bool) {
+    private func showPhysicalPanel(activateForInput: Bool, reposition: Bool) {
         guard let content else { return }
 
         let panel = self.panel ?? makePanel()
         let fittedSize = positioner.fittedPanelSize(for: requestedPanelSize)
-        panel.contentView = NSHostingView(rootView: content)
-        panel.setContentSize(fittedSize)
-        panel.setFrameOrigin(
-            positioner.origin(forPanelSize: fittedSize, avoiding: selectionRect)
-        )
+        if reposition || panel.contentView == nil {
+            panel.contentView = NSHostingView(rootView: content)
+        }
+
+        if reposition || !panel.isVisible {
+            panel.setContentSize(fittedSize)
+            panel.setFrameOrigin(
+                positioner.origin(forPanelSize: fittedSize, avoiding: selectionRect)
+            )
+        } else {
+            let currentFrame = panel.frame
+            let topAnchoredFrame = NSRect(
+                x: currentFrame.minX,
+                y: currentFrame.maxY - fittedSize.height,
+                width: fittedSize.width,
+                height: fittedSize.height
+            )
+            let constrainedFrame = panel.screen.map {
+                panel.constrainFrameRect(topAnchoredFrame, to: $0)
+            } ?? topAnchoredFrame
+            panel.setFrame(constrainedFrame, display: true, animate: true)
+        }
+
         panel.orderFrontRegardless()
         if activateForInput {
             NSApp.activate(ignoringOtherApps: true)
-            panel.makeKeyAndOrderFront(nil)
         }
+        panel.makeKeyAndOrderFront(nil)
     }
 
     private func makePanel() -> DismissiblePanel {
@@ -147,6 +167,9 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
+        panel.isMovable = true
+        panel.isMovableByWindowBackground = true
+        panel.becomesKeyOnlyIfNeeded = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isReleasedWhenClosed = false
         panel.delegate = self
@@ -195,7 +218,7 @@ private final class DismissiblePanel: NSPanel {
     var onCancelOperation: (@MainActor @Sendable () -> Void)?
 
     override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { true }
+    override var canBecomeMain: Bool { false }
 
     override func cancelOperation(_ sender: Any?) {
         onCancelOperation?()

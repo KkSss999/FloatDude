@@ -34,7 +34,8 @@ struct TaskPanelView: View {
                 },
                 onCopy: { _ in coordinator.copyResponse() },
                 onCancel: { coordinator.cancelAndDismiss() },
-                onRetry: { coordinator.retry() }
+                onRetry: { coordinator.retry() },
+                onOpenSettings: { coordinator.openSettings() }
             ),
             onOpenAccessibilitySettings: {
                 guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }

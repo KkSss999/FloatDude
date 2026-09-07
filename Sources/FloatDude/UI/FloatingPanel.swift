@@ -135,19 +135,22 @@ struct FloatingPanelHandlers {
     var onCopy: ((String) -> Void)?
     var onCancel: (() -> Void)?
     var onRetry: (() -> Void)?
+    var onOpenSettings: (() -> Void)?
 
     init(
         onAction: ((PromptAction) -> Void)? = nil,
         onSubmit: ((PromptAction, String) -> Void)? = nil,
         onCopy: ((String) -> Void)? = nil,
         onCancel: (() -> Void)? = nil,
-        onRetry: (() -> Void)? = nil
+        onRetry: (() -> Void)? = nil,
+        onOpenSettings: (() -> Void)? = nil
     ) {
         self.onAction = onAction
         self.onSubmit = onSubmit
         self.onCopy = onCopy
         self.onCancel = onCancel
         self.onRetry = onRetry
+        self.onOpenSettings = onOpenSettings
     }
 }
 
@@ -244,7 +247,8 @@ struct FloatingPanel: View {
                     state: state,
                     onCopy: handlers.onCopy,
                     onCancel: handlers.onCancel,
-                    onRetry: handlers.onRetry
+                    onRetry: handlers.onRetry,
+                    onOpenSettings: handlers.onOpenSettings
                 )
                 .transition(reduceMotion ? .identity : .opacity)
             }
