@@ -16,7 +16,8 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "FloatDude",
-            path: "Sources/FloatDude"
+            path: "Sources/FloatDude",
+            exclude: ["App/Info.plist"]
         ),
         .testTarget(
             name: "FloatDudeTests",

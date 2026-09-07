@@ -1,0 +1,594 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		200000000000000000000001 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000001 /* AppDelegate.swift */; };
+		200000000000000000000002 /* FloatDudeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000002 /* FloatDudeApp.swift */; };
+		200000000000000000000003 /* LLMClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000003 /* LLMClient.swift */; };
+		200000000000000000000004 /* PromptActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000004 /* PromptActions.swift */; };
+		200000000000000000000005 /* SSEParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000005 /* SSEParser.swift */; };
+		200000000000000000000006 /* WindowPositioner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000006 /* WindowPositioner.swift */; };
+		200000000000000000000007 /* ClipboardManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000007 /* ClipboardManager.swift */; };
+		200000000000000000000008 /* SelectionCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000008 /* SelectionCapture.swift */; };
+		200000000000000000000009 /* GlobalHotkey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000009 /* GlobalHotkey.swift */; };
+		20000000000000000000000A /* SettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000000A /* SettingsStore.swift */; };
+		20000000000000000000000B /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000000B /* KeychainStore.swift */; };
+		20000000000000000000000C /* PromptAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000000C /* PromptAction.swift */; };
+		20000000000000000000000D /* FloatDudeError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000000D /* FloatDudeError.swift */; };
+		20000000000000000000000E /* ResponseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000000E /* ResponseView.swift */; };
+		20000000000000000000000F /* PromptView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000000F /* PromptView.swift */; };
+		200000000000000000000010 /* FloatingPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000010 /* FloatingPanel.swift */; };
+		200000000000000000000011 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000011 /* SettingsView.swift */; };
+		200000000000000000000012 /* PromptActionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000012 /* PromptActionTests.swift */; };
+		200000000000000000000013 /* AppRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000017 /* AppRuntime.swift */; };
+		200000000000000000000014 /* TaskCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000018 /* TaskCoordinator.swift */; };
+		200000000000000000000015 /* OpenAIChatCompletionsClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000019 /* OpenAIChatCompletionsClient.swift */; };
+		200000000000000000000016 /* AccessibilitySupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000001A /* AccessibilitySupport.swift */; };
+		200000000000000000000017 /* PanelLifecycle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000001B /* PanelLifecycle.swift */; };
+		200000000000000000000018 /* FloatingPanelController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000001C /* FloatingPanelController.swift */; };
+		200000000000000000000019 /* GlassMaterial.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000001D /* GlassMaterial.swift */; };
+		20000000000000000000001A /* TaskPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000001E /* TaskPanelView.swift */; };
+		20000000000000000000001B /* PerformanceMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000001F /* PerformanceMetrics.swift */; };
+		20000000000000000000001C /* TaskSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000020 /* TaskSession.swift */; };
+		20000000000000000000001D /* ContextCaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000021 /* ContextCaptureTests.swift */; };
+		20000000000000000000001E /* KeychainStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000022 /* KeychainStoreTests.swift */; };
+		20000000000000000000001F /* LLMClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000023 /* LLMClientTests.swift */; };
+		200000000000000000000020 /* PanelLifecycleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000024 /* PanelLifecycleTests.swift */; };
+		200000000000000000000021 /* SSEParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000025 /* SSEParserTests.swift */; };
+		200000000000000000000022 /* SettingsStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000026 /* SettingsStoreTests.swift */; };
+		200000000000000000000023 /* TaskSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000027 /* TaskSessionTests.swift */; };
+		200000000000000000000024 /* UIStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000028 /* UIStateTests.swift */; };
+		200000000000000000000025 /* WindowPositionerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 100000000000000000000029 /* WindowPositionerTests.swift */; };
+		200000000000000000000026 /* GlobalHotkeyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000002A /* GlobalHotkeyTests.swift */; };
+		200000000000000000000027 /* TaskCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10000000000000000000002B /* TaskCoordinatorTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		700000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 000000000000000000000011 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 300000000000000000000001;
+			remoteInfo = FloatDude;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		100000000000000000000001 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		100000000000000000000002 /* FloatDudeApp.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FloatDudeApp.swift; sourceTree = "<group>"; };
+		100000000000000000000003 /* LLMClient.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = LLMClient.swift; sourceTree = "<group>"; };
+		100000000000000000000004 /* PromptActions.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PromptActions.swift; sourceTree = "<group>"; };
+		100000000000000000000005 /* SSEParser.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SSEParser.swift; sourceTree = "<group>"; };
+		100000000000000000000006 /* WindowPositioner.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = WindowPositioner.swift; sourceTree = "<group>"; };
+		100000000000000000000007 /* ClipboardManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ClipboardManager.swift; sourceTree = "<group>"; };
+		100000000000000000000008 /* SelectionCapture.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SelectionCapture.swift; sourceTree = "<group>"; };
+		100000000000000000000009 /* GlobalHotkey.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GlobalHotkey.swift; sourceTree = "<group>"; };
+		10000000000000000000000A /* SettingsStore.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SettingsStore.swift; sourceTree = "<group>"; };
+		10000000000000000000000B /* KeychainStore.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		10000000000000000000000C /* PromptAction.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PromptAction.swift; sourceTree = "<group>"; };
+		10000000000000000000000D /* FloatDudeError.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FloatDudeError.swift; sourceTree = "<group>"; };
+		10000000000000000000000E /* ResponseView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ResponseView.swift; sourceTree = "<group>"; };
+		10000000000000000000000F /* PromptView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PromptView.swift; sourceTree = "<group>"; };
+		100000000000000000000010 /* FloatingPanel.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FloatingPanel.swift; sourceTree = "<group>"; };
+		100000000000000000000011 /* SettingsView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		100000000000000000000012 /* PromptActionTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PromptActionTests.swift; sourceTree = "<group>"; };
+		100000000000000000000013 /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		100000000000000000000014 /* FloatDude.entitlements */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.entitlements; path = FloatDude.entitlements; sourceTree = "<group>"; };
+		100000000000000000000015 /* FloatDude.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FloatDude.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		100000000000000000000016 /* FloatDudeTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FloatDudeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		100000000000000000000017 /* AppRuntime.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppRuntime.swift; sourceTree = "<group>"; };
+		100000000000000000000018 /* TaskCoordinator.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = TaskCoordinator.swift; sourceTree = "<group>"; };
+		100000000000000000000019 /* OpenAIChatCompletionsClient.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = OpenAIChatCompletionsClient.swift; sourceTree = "<group>"; };
+		10000000000000000000001A /* AccessibilitySupport.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AccessibilitySupport.swift; sourceTree = "<group>"; };
+		10000000000000000000001B /* PanelLifecycle.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PanelLifecycle.swift; sourceTree = "<group>"; };
+		10000000000000000000001C /* FloatingPanelController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = FloatingPanelController.swift; sourceTree = "<group>"; };
+		10000000000000000000001D /* GlassMaterial.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GlassMaterial.swift; sourceTree = "<group>"; };
+		10000000000000000000001E /* TaskPanelView.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = TaskPanelView.swift; sourceTree = "<group>"; };
+		10000000000000000000001F /* PerformanceMetrics.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PerformanceMetrics.swift; sourceTree = "<group>"; };
+		100000000000000000000020 /* TaskSession.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = TaskSession.swift; sourceTree = "<group>"; };
+		100000000000000000000021 /* ContextCaptureTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = ContextCaptureTests.swift; sourceTree = "<group>"; };
+		100000000000000000000022 /* KeychainStoreTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = KeychainStoreTests.swift; sourceTree = "<group>"; };
+		100000000000000000000023 /* LLMClientTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = LLMClientTests.swift; sourceTree = "<group>"; };
+		100000000000000000000024 /* PanelLifecycleTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = PanelLifecycleTests.swift; sourceTree = "<group>"; };
+		100000000000000000000025 /* SSEParserTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SSEParserTests.swift; sourceTree = "<group>"; };
+		100000000000000000000026 /* SettingsStoreTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = SettingsStoreTests.swift; sourceTree = "<group>"; };
+		100000000000000000000027 /* TaskSessionTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = TaskSessionTests.swift; sourceTree = "<group>"; };
+		100000000000000000000028 /* UIStateTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = UIStateTests.swift; sourceTree = "<group>"; };
+		100000000000000000000029 /* WindowPositionerTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = WindowPositionerTests.swift; sourceTree = "<group>"; };
+		10000000000000000000002A /* GlobalHotkeyTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GlobalHotkeyTests.swift; sourceTree = "<group>"; };
+		10000000000000000000002B /* TaskCoordinatorTests.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = TaskCoordinatorTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		400000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		400000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		000000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000002 /* Sources */,
+				000000000000000000000003 /* Tests */,
+				100000000000000000000014 /* FloatDude.entitlements */,
+				000000000000000000000010 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		000000000000000000000002 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000012 /* FloatDude */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		000000000000000000000003 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000013 /* FloatDudeTests */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		000000000000000000000012 /* FloatDude */ = {
+			isa = PBXGroup;
+			children = (
+				000000000000000000000004 /* App */,
+				000000000000000000000005 /* AI */,
+				000000000000000000000006 /* Core */,
+				000000000000000000000007 /* Storage */,
+				000000000000000000000008 /* System */,
+				000000000000000000000009 /* UI */,
+			);
+			path = FloatDude;
+			sourceTree = "<group>";
+		};
+		000000000000000000000013 /* FloatDudeTests */ = {
+			isa = PBXGroup;
+			children = (
+				100000000000000000000012 /* PromptActionTests.swift */,
+				100000000000000000000021 /* ContextCaptureTests.swift */,
+				100000000000000000000022 /* KeychainStoreTests.swift */,
+				100000000000000000000023 /* LLMClientTests.swift */,
+				100000000000000000000024 /* PanelLifecycleTests.swift */,
+				100000000000000000000025 /* SSEParserTests.swift */,
+				100000000000000000000026 /* SettingsStoreTests.swift */,
+				100000000000000000000027 /* TaskSessionTests.swift */,
+				100000000000000000000028 /* UIStateTests.swift */,
+				100000000000000000000029 /* WindowPositionerTests.swift */,
+				10000000000000000000002A /* GlobalHotkeyTests.swift */,
+				10000000000000000000002B /* TaskCoordinatorTests.swift */,
+			);
+			path = FloatDudeTests;
+			sourceTree = "<group>";
+		};
+		000000000000000000000004 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				100000000000000000000001 /* AppDelegate.swift */,
+				100000000000000000000002 /* FloatDudeApp.swift */,
+				100000000000000000000017 /* AppRuntime.swift */,
+				100000000000000000000018 /* TaskCoordinator.swift */,
+				100000000000000000000020 /* TaskSession.swift */,
+				100000000000000000000013 /* Info.plist */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		000000000000000000000005 /* AI */ = {
+			isa = PBXGroup;
+			children = (
+				100000000000000000000003 /* LLMClient.swift */,
+				100000000000000000000004 /* PromptActions.swift */,
+				100000000000000000000005 /* SSEParser.swift */,
+				100000000000000000000019 /* OpenAIChatCompletionsClient.swift */,
+			);
+			path = AI;
+			sourceTree = "<group>";
+		};
+		000000000000000000000006 /* Core */ = {
+			isa = PBXGroup;
+			children = (
+				10000000000000000000000C /* PromptAction.swift */,
+				10000000000000000000000D /* FloatDudeError.swift */,
+				10000000000000000000001F /* PerformanceMetrics.swift */,
+			);
+			path = Core;
+			sourceTree = "<group>";
+		};
+		000000000000000000000007 /* Storage */ = {
+			isa = PBXGroup;
+			children = (
+				10000000000000000000000A /* SettingsStore.swift */,
+				10000000000000000000000B /* KeychainStore.swift */,
+			);
+			path = Storage;
+			sourceTree = "<group>";
+		};
+		000000000000000000000008 /* System */ = {
+			isa = PBXGroup;
+			children = (
+				10000000000000000000001A /* AccessibilitySupport.swift */,
+				100000000000000000000007 /* ClipboardManager.swift */,
+				100000000000000000000009 /* GlobalHotkey.swift */,
+				10000000000000000000001B /* PanelLifecycle.swift */,
+				100000000000000000000008 /* SelectionCapture.swift */,
+				100000000000000000000006 /* WindowPositioner.swift */,
+			);
+			path = System;
+			sourceTree = "<group>";
+		};
+		000000000000000000000009 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				100000000000000000000010 /* FloatingPanel.swift */,
+				10000000000000000000001C /* FloatingPanelController.swift */,
+				10000000000000000000001D /* GlassMaterial.swift */,
+				10000000000000000000000F /* PromptView.swift */,
+				10000000000000000000000E /* ResponseView.swift */,
+				100000000000000000000011 /* SettingsView.swift */,
+				10000000000000000000001E /* TaskPanelView.swift */,
+			);
+			path = UI;
+			sourceTree = "<group>";
+		};
+		000000000000000000000010 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				100000000000000000000015 /* FloatDude.app */,
+				100000000000000000000016 /* FloatDudeTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		300000000000000000000001 /* FloatDude */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 600000000000000000000002 /* Build configuration list for PBXNativeTarget "FloatDude" */;
+			buildPhases = (
+				400000000000000000000001 /* Sources */,
+				400000000000000000000002 /* Frameworks */,
+				400000000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = FloatDude;
+			productName = FloatDude;
+			productReference = 100000000000000000000015 /* FloatDude.app */;
+			productType = "com.apple.product-type.application";
+		};
+		300000000000000000000002 /* FloatDudeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 600000000000000000000003 /* Build configuration list for PBXNativeTarget "FloatDudeTests" */;
+			buildPhases = (
+				400000000000000000000004 /* Sources */,
+				400000000000000000000005 /* Frameworks */,
+				400000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				710000000000000000000001 /* PBXTargetDependency */,
+			);
+			name = FloatDudeTests;
+			productName = FloatDudeTests;
+			productReference = 100000000000000000000016 /* FloatDudeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		000000000000000000000011 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					300000000000000000000001 = {
+						CreatedOnToolsVersion = 1600;
+					};
+					300000000000000000000002 = {
+						CreatedOnToolsVersion = 1600;
+						TestTargetID = 300000000000000000000001;
+					};
+				};
+			};
+			buildConfigurationList = 600000000000000000000001 /* Build configuration list for PBXProject "FloatDude" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 000000000000000000000001;
+			productRefGroup = 000000000000000000000010 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				300000000000000000000001 /* FloatDude */,
+				300000000000000000000002 /* FloatDudeTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		400000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		400000000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		400000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				200000000000000000000001 /* AppDelegate.swift in Sources */,
+				200000000000000000000002 /* FloatDudeApp.swift in Sources */,
+				200000000000000000000003 /* LLMClient.swift in Sources */,
+				200000000000000000000004 /* PromptActions.swift in Sources */,
+				200000000000000000000005 /* SSEParser.swift in Sources */,
+				200000000000000000000006 /* WindowPositioner.swift in Sources */,
+				200000000000000000000007 /* ClipboardManager.swift in Sources */,
+				200000000000000000000008 /* SelectionCapture.swift in Sources */,
+				200000000000000000000009 /* GlobalHotkey.swift in Sources */,
+				20000000000000000000000A /* SettingsStore.swift in Sources */,
+				20000000000000000000000B /* KeychainStore.swift in Sources */,
+				20000000000000000000000C /* PromptAction.swift in Sources */,
+				20000000000000000000000D /* FloatDudeError.swift in Sources */,
+				20000000000000000000000E /* ResponseView.swift in Sources */,
+				20000000000000000000000F /* PromptView.swift in Sources */,
+				200000000000000000000010 /* FloatingPanel.swift in Sources */,
+				200000000000000000000011 /* SettingsView.swift in Sources */,
+				200000000000000000000013 /* AppRuntime.swift in Sources */,
+				200000000000000000000014 /* TaskCoordinator.swift in Sources */,
+				200000000000000000000015 /* OpenAIChatCompletionsClient.swift in Sources */,
+				200000000000000000000016 /* AccessibilitySupport.swift in Sources */,
+				200000000000000000000017 /* PanelLifecycle.swift in Sources */,
+				200000000000000000000018 /* FloatingPanelController.swift in Sources */,
+				200000000000000000000019 /* GlassMaterial.swift in Sources */,
+				20000000000000000000001A /* TaskPanelView.swift in Sources */,
+				20000000000000000000001B /* PerformanceMetrics.swift in Sources */,
+				20000000000000000000001C /* TaskSession.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		400000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				200000000000000000000012 /* PromptActionTests.swift in Sources */,
+				20000000000000000000001D /* ContextCaptureTests.swift in Sources */,
+				20000000000000000000001E /* KeychainStoreTests.swift in Sources */,
+				20000000000000000000001F /* LLMClientTests.swift in Sources */,
+				200000000000000000000020 /* PanelLifecycleTests.swift in Sources */,
+				200000000000000000000021 /* SSEParserTests.swift in Sources */,
+				200000000000000000000022 /* SettingsStoreTests.swift in Sources */,
+				200000000000000000000023 /* TaskSessionTests.swift in Sources */,
+				200000000000000000000024 /* UIStateTests.swift in Sources */,
+				200000000000000000000025 /* WindowPositionerTests.swift in Sources */,
+				200000000000000000000026 /* GlobalHotkeyTests.swift in Sources */,
+				200000000000000000000027 /* TaskCoordinatorTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		710000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 300000000000000000000001 /* FloatDude */;
+			targetProxy = 700000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		500000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		500000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		500000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = FloatDude.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				CODE_SIGN_STYLE = Manual;
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGNING_REQUIRED = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				ENABLE_TESTABILITY = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Sources/FloatDude/App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kks999.FloatDude;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		500000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = FloatDude.entitlements;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				CODE_SIGN_STYLE = Manual;
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGNING_REQUIRED = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Sources/FloatDude/App/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kks999.FloatDude;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		500000000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGNING_REQUIRED = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/../Frameworks",
+					"@loader_path/../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kks999.FloatDudeTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FloatDude.app/Contents/MacOS/FloatDude";
+				TEST_TARGET_NAME = FloatDude;
+			};
+			name = Debug;
+		};
+		500000000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGNING_REQUIRED = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/../Frameworks",
+					"@loader_path/../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.kks999.FloatDudeTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FloatDude.app/Contents/MacOS/FloatDude";
+				TEST_TARGET_NAME = FloatDude;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		600000000000000000000001 /* Build configuration list for PBXProject "FloatDude" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				500000000000000000000001 /* Debug */,
+				500000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		600000000000000000000002 /* Build configuration list for PBXNativeTarget "FloatDude" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				500000000000000000000003 /* Debug */,
+				500000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		600000000000000000000003 /* Build configuration list for PBXNativeTarget "FloatDudeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				500000000000000000000005 /* Debug */,
+				500000000000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 000000000000000000000011 /* Project object */;
+}
