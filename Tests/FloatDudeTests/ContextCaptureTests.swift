@@ -9,7 +9,7 @@ final class ContextCaptureTests: XCTestCase {
         let pasteboard = FakePasteboard(text: "剪贴板文字")
         let capture = SelectionCapture(accessibility: accessibility, pasteboard: pasteboard)
 
-        let result = await capture.captureContext(directInput: "直接输入")
+        let result = capture.captureContext(directInput: "直接输入")
 
         XCTAssertEqual(
             result,
@@ -31,7 +31,7 @@ final class ContextCaptureTests: XCTestCase {
             pasteboard: FakePasteboard()
         )
 
-        let result = await capture.captureContext()
+        let result = capture.captureContext()
 
         XCTAssertEqual(
             result,
@@ -46,12 +46,49 @@ final class ContextCaptureTests: XCTestCase {
         )
     }
 
+    func testEditableAccessibilitySelectionExposesRewriteCapability() async {
+        let capture = SelectionCapture(
+            accessibility: FakeAccessibilityProvider(
+                selectedText: "editable",
+                canReplaceSelection: true
+            ),
+            pasteboard: FakePasteboard()
+        )
+
+        let result = capture.captureContext()
+
+        XCTAssertEqual(
+            result,
+            .captured(CapturedContext(
+                text: "editable",
+                source: .accessibilitySelection,
+                applicationName: nil,
+                canReplaceSelection: true
+            ))
+        )
+    }
+
+    func testReadOnlyAccessibilitySelectionDoesNotExposeRewriteCapability() async {
+        let capture = SelectionCapture(
+            accessibility: FakeAccessibilityProvider(
+                selectedText: "read only",
+                canReplaceSelection: false
+            ),
+            pasteboard: FakePasteboard()
+        )
+
+        guard case let .captured(context) = capture.captureContext() else {
+            return XCTFail("Expected captured context")
+        }
+        XCTAssertFalse(context.canReplaceSelection)
+    }
+
     func testDeniedAccessibilityFallsBackToClipboard() async {
         let accessibility = FakeAccessibilityProvider(mode: .denied)
         let pasteboard = FakePasteboard(text: "clipboard fallback")
         let capture = SelectionCapture(accessibility: accessibility, pasteboard: pasteboard)
 
-        let result = await capture.captureContext(directInput: "direct input")
+        let result = capture.captureContext(directInput: "direct input")
 
         XCTAssertEqual(
             result,
@@ -72,7 +109,7 @@ final class ContextCaptureTests: XCTestCase {
         let pasteboard = FakePasteboard(text: "clipboard after AX error")
         let capture = SelectionCapture(accessibility: accessibility, pasteboard: pasteboard)
 
-        let result = await capture.captureContext(directInput: "direct input")
+        let result = capture.captureContext(directInput: "direct input")
 
         XCTAssertEqual(
             result,
@@ -91,7 +128,7 @@ final class ContextCaptureTests: XCTestCase {
         let pasteboard = FakePasteboard(text: " \n\t")
         let capture = SelectionCapture(accessibility: accessibility, pasteboard: pasteboard)
 
-        let result = await capture.captureContext(directInput: "editable direct input")
+        let result = capture.captureContext(directInput: "editable direct input")
 
         XCTAssertEqual(
             result,
@@ -110,7 +147,7 @@ final class ContextCaptureTests: XCTestCase {
         let accessibility = FakeAccessibilityProvider(selectedText: text)
         let capture = SelectionCapture(accessibility: accessibility, pasteboard: FakePasteboard())
 
-        let result = await capture.captureContext()
+        let result = capture.captureContext()
 
         XCTAssertEqual(
             result,
@@ -129,7 +166,7 @@ final class ContextCaptureTests: XCTestCase {
         let pasteboard = FakePasteboard(text: "clipboard")
         let capture = SelectionCapture(accessibility: accessibility, pasteboard: pasteboard)
 
-        let result = await capture.captureContext()
+        let result = capture.captureContext()
 
         XCTAssertEqual(
             result,
@@ -147,7 +184,7 @@ final class ContextCaptureTests: XCTestCase {
             pasteboard: FakePasteboard(text: oversizedText)
         )
 
-        let result = await capture.captureContext(directInput: "must not be selected")
+        let result = capture.captureContext(directInput: "must not be selected")
 
         XCTAssertEqual(
             result,
@@ -168,7 +205,7 @@ final class ContextCaptureTests: XCTestCase {
             pasteboard: FakePasteboard()
         )
 
-        let result = await capture.captureContext(directInput: oversizedText)
+        let result = capture.captureContext(directInput: oversizedText)
 
         XCTAssertEqual(
             result,
@@ -188,7 +225,7 @@ final class ContextCaptureTests: XCTestCase {
             pasteboard: FakePasteboard()
         )
 
-        let result = await capture.captureContext()
+        let result = capture.captureContext()
         XCTAssertEqual(result, .unavailable(reason: .accessibilityPermissionDenied))
     }
 
@@ -199,7 +236,7 @@ final class ContextCaptureTests: XCTestCase {
             pasteboard: FakePasteboard(text: sensitiveValue)
         )
 
-        let result = await capture.captureContext()
+        let result = capture.captureContext()
 
         XCTAssertEqual(result, .unavailable(reason: .sensitiveClipboardBlocked))
         XCTAssertFalse(String(describing: result).contains(sensitiveValue))
@@ -213,7 +250,7 @@ final class ContextCaptureTests: XCTestCase {
             pasteboard: pasteboard
         )
 
-        let result = await capture.captureContext()
+        let result = capture.captureContext()
 
         XCTAssertEqual(result, .rejected(.sensitiveContent(source: .accessibilitySelection)))
         XCTAssertEqual(pasteboard.readCount, 0)
@@ -230,6 +267,7 @@ private struct FakeAccessibilityProvider: AccessibilityProviding {
     let mode: Mode
     let selectedText: String?
     let selectionRect: CGRect?
+    let canReplaceSelection: Bool
 
     var isTrusted: Bool {
         mode != .denied
@@ -238,11 +276,13 @@ private struct FakeAccessibilityProvider: AccessibilityProviding {
     init(
         mode: Mode = .available,
         selectedText: String? = nil,
-        selectionRect: CGRect? = nil
+        selectionRect: CGRect? = nil,
+        canReplaceSelection: Bool = false
     ) {
         self.mode = mode
         self.selectedText = selectedText
         self.selectionRect = selectionRect
+        self.canReplaceSelection = canReplaceSelection
     }
 
     func focusedElement() throws -> AXUIElement? {
@@ -267,6 +307,10 @@ private struct FakeAccessibilityProvider: AccessibilityProviding {
 
     func selectedTextBounds(from focusedElement: AXUIElement) throws -> CGRect? {
         selectionRect
+    }
+
+    func canReplaceSelectedText(in focusedElement: AXUIElement) throws -> Bool {
+        canReplaceSelection
     }
 }
 

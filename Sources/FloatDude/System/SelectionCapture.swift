@@ -19,6 +19,9 @@ struct CapturedContext: Sendable, Equatable {
     let text: String
     let source: Source
     let applicationName: String?
+    /// True only when Accessibility confirms the focused element accepts a
+    /// direct replacement through its selected-text attribute.
+    let canReplaceSelection: Bool
     /// AppKit desktop coordinates for placement avoidance when Accessibility
     /// exposes the bounds of the source selection.
     let selectionRect: CGRect?
@@ -29,12 +32,14 @@ struct CapturedContext: Sendable, Equatable {
         text: String,
         source: Source,
         applicationName: String?,
+        canReplaceSelection: Bool = false,
         selectionRect: CGRect? = nil,
         guidance: String? = nil
     ) {
         self.text = text
         self.source = source
         self.applicationName = applicationName
+        self.canReplaceSelection = canReplaceSelection
         self.selectionRect = selectionRect
         self.guidance = guidance
     }
@@ -80,7 +85,7 @@ enum ContextCaptureResult: Sendable, Equatable {
 protocol ContextCapturing: Sendable {
     /// Capture before activating the panel. `directInput` is supplied by the
     /// coordinator's editable input field and is the final fallback.
-    func captureContext(directInput: String?) async -> ContextCaptureResult
+    func captureContext(directInput: String?) -> ContextCaptureResult
 }
 
 struct SelectionCapture: ContextCapturing {
@@ -104,13 +109,14 @@ struct SelectionCapture: ContextCapturing {
         self.init(accessibility: accessibility, pasteboard: clipboard)
     }
 
-    func captureContext(directInput: String? = nil) async -> ContextCaptureResult {
+    func captureContext(directInput: String? = nil) -> ContextCaptureResult {
         // This method performs only short, synchronous system reads. The
         // coordinator must call it before showing/activating the panel.
         if let selection = readSelection(),
            let result = makeResult(
                text: selection.text,
                source: .accessibilitySelection,
+               canReplaceSelection: selection.canReplace,
                selectionRect: selection.rect
            ) {
             return result
@@ -143,7 +149,7 @@ struct SelectionCapture: ContextCapturing {
             ?? .unavailable(reason: .noSelectionOrClipboard)
     }
 
-    private func readSelection() -> (text: String, rect: CGRect?)? {
+    private func readSelection() -> (text: String, rect: CGRect?, canReplace: Bool)? {
         do {
             guard let focusedElement = try accessibility.focusedElement() else {
                 return nil
@@ -151,7 +157,11 @@ struct SelectionCapture: ContextCapturing {
             guard let text = try accessibility.selectedText(from: focusedElement) else {
                 return nil
             }
-            return (text, try? accessibility.selectedTextBounds(from: focusedElement))
+            return (
+                text,
+                try? accessibility.selectedTextBounds(from: focusedElement),
+                (try? accessibility.canReplaceSelectedText(in: focusedElement)) ?? false
+            )
         } catch {
             // Accessibility is intentionally non-blocking. AX errors and
             // permission changes simply advance the fallback chain.
@@ -166,6 +176,7 @@ struct SelectionCapture: ContextCapturing {
     private func makeResult(
         text: String,
         source: CapturedContext.Source,
+        canReplaceSelection: Bool = false,
         selectionRect: CGRect? = nil,
         guidance: String? = nil
     ) -> ContextCaptureResult? {
@@ -193,6 +204,7 @@ struct SelectionCapture: ContextCapturing {
                 text: text,
                 source: source,
                 applicationName: nil,
+                canReplaceSelection: canReplaceSelection,
                 selectionRect: selectionRect,
                 guidance: guidance
             )

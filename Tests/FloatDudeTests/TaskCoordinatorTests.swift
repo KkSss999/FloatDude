@@ -127,6 +127,26 @@ final class TaskCoordinatorTests: XCTestCase {
         XCTAssertFalse(coordinator.session.errorMessage?.contains(String(repeating: "f", count: 32)) == true)
     }
 
+    func testRewriteActionIsIgnoredForReadOnlySelection() async {
+        let requestBox = RequestBox()
+        let coordinator = makeCoordinator(
+            context: CapturedContext(
+                text: "read only",
+                source: .accessibilitySelection,
+                applicationName: "Preview",
+                canReplaceSelection: false
+            ),
+            requestBox: requestBox
+        )
+
+        coordinator.beginInvocation()
+        await waitUntil { coordinator.session.phase == .contextCaptured }
+        coordinator.runAction(.rewrite)
+
+        XCTAssertNil(requestBox.request)
+        XCTAssertEqual(coordinator.session.phase, .contextCaptured)
+    }
+
     private func makeCoordinator(
         context: CapturedContext? = CapturedContext(text: "context", source: .clipboard, applicationName: nil),
         settings: TestSettingsStore = TestSettingsStore(settings: AppSettings(
@@ -199,7 +219,7 @@ private final class TestSettingsStore: SettingsStoring {
 private struct TestContextCapturer: ContextCapturing {
     let context: CapturedContext?
 
-    func captureContext(directInput: String?) async -> ContextCaptureResult {
+    func captureContext(directInput: String?) -> ContextCaptureResult {
         if let context {
             return .captured(context)
         }

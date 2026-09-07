@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import SwiftUI
 
@@ -173,6 +174,7 @@ struct FloatingPanel: View {
 
     private let selectedText: String
     private let selectedSource: CapturedContext.Source?
+    private let canRewriteSelection: Bool
     private let contextGuidance: String?
     private let onOpenAccessibilitySettings: (() -> Void)?
     private let handlers: FloatingPanelHandlers
@@ -184,6 +186,7 @@ struct FloatingPanel: View {
         prompt: Binding<String>,
         selectedText: String = "",
         selectedSource: CapturedContext.Source? = nil,
+        canRewriteSelection: Bool = false,
         contextGuidance: String? = nil,
         selectedAction: Binding<PromptAction> = .constant(.ask),
         handlers: FloatingPanelHandlers = .init(),
@@ -194,6 +197,7 @@ struct FloatingPanel: View {
         self._selectedAction = selectedAction
         self.selectedText = selectedText
         self.selectedSource = selectedSource
+        self.canRewriteSelection = canRewriteSelection
         self.contextGuidance = contextGuidance
         self.onOpenAccessibilitySettings = onOpenAccessibilitySettings
         self.handlers = handlers
@@ -208,6 +212,7 @@ struct FloatingPanel: View {
         self._selectedAction = .constant(.ask)
         self.selectedText = ""
         self.selectedSource = nil
+        self.canRewriteSelection = false
         self.contextGuidance = nil
         self.onOpenAccessibilitySettings = nil
         self.handlers = .init()
@@ -225,13 +230,15 @@ struct FloatingPanel: View {
     }
 
     private var panelSurface: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            panelHeader
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 10) {
+                panelHeader
 
-            PromptView(
-                prompt: $prompt,
+                PromptView(
+                    prompt: $prompt,
                     selectedText: selectedText,
                     selectedSource: selectedSource,
+                    canRewriteSelection: canRewriteSelection,
                     contextGuidance: contextGuidance,
                     selectedAction: $selectedAction,
                     isDisabled: state.isBusy,
@@ -239,24 +246,28 @@ struct FloatingPanel: View {
                     onSubmit: submit,
                     onCancel: handlers.onCancel,
                     onOpenAccessibilitySettings: onOpenAccessibilitySettings
-            )
-
-            if state.isResponseVisible {
-                ResponseView(
-                    response: state.responseText ?? "",
-                    state: state,
-                    onCopy: handlers.onCopy,
-                    onCancel: handlers.onCancel,
-                    onRetry: handlers.onRetry,
-                    onOpenSettings: handlers.onOpenSettings
                 )
-                .transition(reduceMotion ? .identity : .opacity)
+
+                if state.isResponseVisible {
+                    ResponseView(
+                        response: state.responseText ?? "",
+                        state: state,
+                        onCopy: handlers.onCopy,
+                        onCancel: handlers.onCancel,
+                        onRetry: handlers.onRetry,
+                        onOpenSettings: handlers.onOpenSettings
+                    )
+                    .transition(reduceMotion ? .identity : .opacity)
+                }
             }
+            .padding(18)
         }
-        .padding(16)
+        .scrollIndicators(.hidden)
         .frame(minWidth: 336, idealWidth: 400, maxWidth: 456, alignment: .topLeading)
-        .fixedSize(horizontal: false, vertical: true)
-        .glassMaterial(cornerRadius: 22)
+        .frame(maxHeight: .infinity, alignment: .top)
+        .glassMaterial(cornerRadius: 28)
+        .shadow(color: .black.opacity(0.16), radius: 4, x: 0, y: 2)
+        .padding(5)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: didExpandOnce)
         .transaction { transaction in
             if reduceMotion { transaction.animation = nil }
@@ -271,24 +282,29 @@ struct FloatingPanel: View {
 
     private var panelHeader: some View {
         HStack(alignment: .center, spacing: 10) {
-            Image(systemName: "sparkles")
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.tint)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkle")
+                    .font(.system(size: 21, weight: .light))
+                    .accessibilityHidden(true)
                 Text("FloatDude")
-                    .font(.headline)
-                Text(state.isResponseVisible ? state.statusTitle : "One-shot assistant")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                Spacer(minLength: 8)
             }
-            Spacer(minLength: 8)
-            Text("Esc")
-                .font(.caption2.weight(.bold).monospaced())
-                .padding(.horizontal, 6)
-                .padding(.vertical, 4)
-                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
-                .accessibilityLabel("Press Escape to close")
+            .frame(height: 26)
+            .overlay { PanelDragHandle().accessibilityHidden(true) }
+            .help("Drag to move")
+            Button {
+                handlers.onCancel?()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 26, height: 26)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.escape)
+            .help("Close (Esc)")
+            .accessibilityLabel("Close FloatDude")
         }
     }
 
@@ -302,5 +318,32 @@ struct FloatingPanel: View {
         // panel; subsequent stream chunks only update content within the same
         // response region.
         if !didExpandOnce { didExpandOnce = true }
+    }
+}
+
+/// NSHostingView/NSScrollView consume mouse events before background window
+/// dragging sees them. Give the title strip an explicit native drag target;
+/// keep it away from the close button, text selection and input controls.
+private struct PanelDragHandle: NSViewRepresentable {
+    func makeNSView(context: Context) -> DragView { DragView() }
+    func updateNSView(_ view: DragView, context: Context) {}
+
+    final class DragView: NSView {
+        private var grabPoint: NSPoint?
+        override var mouseDownCanMoveWindow: Bool { false }
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func mouseDown(with event: NSEvent) {
+            grabPoint = event.locationInWindow
+        }
+        override func mouseDragged(with event: NSEvent) {
+            guard let window, let grabPoint else { return }
+            window.setFrameOrigin(NSPoint(
+                x: window.frame.minX + event.locationInWindow.x - grabPoint.x,
+                y: window.frame.minY + event.locationInWindow.y - grabPoint.y
+            ))
+        }
+        override func mouseUp(with event: NSEvent) {
+            grabPoint = nil
+        }
     }
 }

@@ -326,8 +326,14 @@ private final class HandlerBox: @unchecked Sendable {
     }
 
     func invoke() {
-        Task { @MainActor [handler] in
-            handler()
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                handler()
+            }
+        } else {
+            Task { @MainActor [handler] in
+                handler()
+            }
         }
     }
 }

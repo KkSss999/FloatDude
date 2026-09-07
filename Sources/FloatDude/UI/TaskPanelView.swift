@@ -25,6 +25,7 @@ struct TaskPanelView: View {
             prompt: $coordinator.userPrompt,
             selectedText: coordinator.session.context?.text ?? "",
             selectedSource: coordinator.session.context?.source,
+            canRewriteSelection: coordinator.session.context?.canReplaceSelection ?? false,
             contextGuidance: coordinator.contextGuidance,
             selectedAction: $coordinator.selectedAction,
             handlers: FloatingPanelHandlers(

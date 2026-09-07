@@ -110,6 +110,8 @@ struct SettingsView: View {
                 if !accessibilityGranted {
                     Text("If FloatDude is already enabled in System Settings, its authorization may belong to another build. Local ad-hoc signatures change when rebuilt. Authorize the current app after the final build.")
                         .font(.caption)
+                    Text("Privacy & Security → \(SystemAccessibilityProvider.settingsPaneName). Add this installed app, then enable its switch.")
+                        .font(.caption)
                     Text(Bundle.main.bundleURL.path)
                         .font(.caption.monospaced())
                         .textSelection(.enabled)
@@ -119,8 +121,11 @@ struct SettingsView: View {
                     Button("Request Access") {
                         accessibilityGranted = SystemAccessibilityProvider.requestAccessIfNeeded()
                     }
-                    Button("Open Accessibility Settings") {
+                    Button("Open Privacy Settings") {
                         SystemAccessibilityProvider.openAccessibilitySettings()
+                    }
+                    Button("Show App in Finder") {
+                        SystemAccessibilityProvider.revealRunningApp()
                     }
                     Button("Refresh") {
                         accessibilityGranted = SystemAccessibilityProvider().isTrusted

@@ -72,6 +72,45 @@ final class WindowPositionerTests: XCTestCase {
         XCTAssertFalse(CGRect(origin: origin, size: panelSize).intersects(selection))
     }
 
+    func testSelectionDisplayWinsWhenCursorIsOnAnotherDisplay() {
+        let displays = [
+            DisplayGeometry(
+                frame: CGRect(x: 0, y: 0, width: 1_000, height: 800),
+                visibleFrame: CGRect(x: 0, y: 0, width: 1_000, height: 760)
+            ),
+            DisplayGeometry(
+                frame: CGRect(x: 1_000, y: 0, width: 1_200, height: 900),
+                visibleFrame: CGRect(x: 1_000, y: 0, width: 1_200, height: 860)
+            ),
+        ]
+        let selection = CGRect(x: 1_300, y: 500, width: 200, height: 24)
+
+        let origin = WindowPlacementCalculator.origin(
+            forPanelSize: CGSize(width: 400, height: 236),
+            cursorLocation: CGPoint(x: 300, y: 400),
+            displays: displays,
+            avoiding: selection
+        )
+
+        XCTAssertGreaterThanOrEqual(origin.x, 1_012)
+        XCTAssertLessThanOrEqual(origin.x + 400, 2_188)
+        XCTAssertEqual(origin, CGPoint(x: 1_300, y: 250))
+    }
+
+    func testInvalidOffscreenSelectionFallsBackToCursorDisplay() {
+        let origin = WindowPlacementCalculator.origin(
+            forPanelSize: CGSize(width: 300, height: 180),
+            cursorLocation: CGPoint(x: 500, y: 400),
+            displays: [DisplayGeometry(
+                frame: CGRect(x: 0, y: 0, width: 1_000, height: 800),
+                visibleFrame: CGRect(x: 0, y: 0, width: 1_000, height: 760)
+            )],
+            avoiding: CGRect(x: 50_000, y: 50_000, width: 100, height: 20)
+        )
+
+        XCTAssertEqual(origin, CGPoint(x: 514, y: 206))
+    }
+
     func testSelectionAnchorFlipsAboveNearBottomScreenEdge() {
         let panelSize = CGSize(width: 300, height: 220)
         let selection = CGRect(x: 180, y: 24, width: 160, height: 24)

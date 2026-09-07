@@ -6,6 +6,7 @@ protocol WindowPositioning: Sendable {
     func origin(forPanelSize size: CGSize) -> CGPoint
     func origin(forPanelSize size: CGSize, avoiding rect: CGRect?) -> CGPoint
     func fittedPanelSize(for size: CGSize) -> CGSize
+    func fittedPanelSize(for size: CGSize, avoiding rect: CGRect?) -> CGSize
 }
 
 extension WindowPositioning {
@@ -15,6 +16,10 @@ extension WindowPositioning {
 
     func fittedPanelSize(for size: CGSize) -> CGSize {
         size
+    }
+
+    func fittedPanelSize(for size: CGSize, avoiding _: CGRect?) -> CGSize {
+        fittedPanelSize(for: size)
     }
 }
 
@@ -55,12 +60,14 @@ struct WindowPlacementCalculator: Sendable {
         cursorGap: CGFloat = defaultCursorGap,
         cursorAvoidance: CGFloat = defaultCursorAvoidance
     ) -> CGPoint {
-        let display = activeDisplay(for: cursorLocation, in: displays)
+        let validatedSelection = validSelectionRect(selectionRect, in: displays)
+        let display = validatedSelection.flatMap { displayContaining($0, in: displays) }
+            ?? activeDisplay(for: cursorLocation, in: displays)
         return origin(
             forPanelSize: panelSize,
             cursorLocation: cursorLocation,
             visibleFrame: display.visibleFrame,
-            avoiding: selectionRect,
+            avoiding: validatedSelection,
             edgeInset: edgeInset,
             cursorGap: cursorGap,
             cursorAvoidance: cursorAvoidance
@@ -97,46 +104,37 @@ struct WindowPlacementCalculator: Sendable {
             height: cursorAvoidance
         )
         let anchorRect = selectionRect ?? cursorRect
-        let forbiddenRects = selectionRect.map { [$0, cursorRect] } ?? [cursorRect]
-        let desiredOrigin = CGPoint(
-            x: anchorRect.minX,
-            y: anchorRect.minY - fittedSize.height - cursorGap
-        )
+        let candidates: [CGPoint]
+        if selectionRect != nil {
+            // A fixed order makes repeated invocations beside the same text
+            // predictable: below, above, right, then left.
+            candidates = [
+                CGPoint(x: anchorRect.minX, y: anchorRect.minY - fittedSize.height - cursorGap),
+                CGPoint(x: anchorRect.minX, y: anchorRect.maxY + cursorGap),
+                CGPoint(x: anchorRect.maxX + cursorGap, y: anchorRect.midY - fittedSize.height / 2),
+                CGPoint(x: anchorRect.minX - fittedSize.width - cursorGap,
+                        y: anchorRect.midY - fittedSize.height / 2),
+            ]
+        } else {
+            candidates = [
+                CGPoint(x: cursorLocation.x + cursorGap,
+                        y: cursorLocation.y - fittedSize.height - cursorGap),
+                CGPoint(x: cursorLocation.x - fittedSize.width - cursorGap,
+                        y: cursorLocation.y - fittedSize.height - cursorGap),
+                CGPoint(x: cursorLocation.x + cursorGap, y: cursorLocation.y + cursorGap),
+                CGPoint(x: cursorLocation.x - fittedSize.width - cursorGap,
+                        y: cursorLocation.y + cursorGap),
+            ]
+        }
 
-        let anchorOrigins = [
-            desiredOrigin,
-            CGPoint(x: anchorRect.minX, y: anchorRect.maxY + cursorGap),
-            CGPoint(
-                x: anchorRect.maxX + cursorGap,
-                y: anchorRect.midY - fittedSize.height / 2
-            ),
-            CGPoint(
-                x: anchorRect.minX - fittedSize.width - cursorGap,
-                y: anchorRect.midY - fittedSize.height / 2
-            )
-        ]
-        let cursorFallbackOrigins = [
-            CGPoint(
-                x: cursorLocation.x + cursorGap,
-                y: cursorLocation.y - fittedSize.height - cursorGap
-            ),
-            CGPoint(
-                x: cursorLocation.x - fittedSize.width - cursorGap,
-                y: cursorLocation.y - fittedSize.height - cursorGap
-            ),
-            CGPoint(x: cursorLocation.x + cursorGap, y: cursorLocation.y + cursorGap),
-            CGPoint(
-                x: cursorLocation.x - fittedSize.width - cursorGap,
-                y: cursorLocation.y + cursorGap
-            )
-        ]
-        let candidateOrigins = (anchorOrigins + cursorFallbackOrigins)
-            .map { clamp($0, panelSize: fittedSize, to: safeFrame) }
+        if let origin = candidates.first(where: {
+            safeFrame.contains(CGRect(origin: $0, size: fittedSize))
+                && !CGRect(origin: $0, size: fittedSize).intersects(anchorRect)
+        }) {
+            return origin
+        }
 
-        return candidateOrigins.min { lhs, rhs in
-            score(origin: lhs, panelSize: fittedSize, forbidden: forbiddenRects, desired: desiredOrigin)
-                < score(origin: rhs, panelSize: fittedSize, forbidden: forbiddenRects, desired: desiredOrigin)
-        } ?? clamp(desiredOrigin, panelSize: fittedSize, to: safeFrame)
+        return clamp(candidates[0], panelSize: fittedSize, to: safeFrame)
     }
 
     private static func clamp(
@@ -150,19 +148,33 @@ struct WindowPlacementCalculator: Sendable {
         )
     }
 
-    private static func score(
-        origin: CGPoint,
-        panelSize: CGSize,
-        forbidden: [CGRect],
-        desired: CGPoint
-    ) -> CGFloat {
-        let panelRect = CGRect(origin: origin, size: panelSize)
-        let overlapArea = forbidden.reduce(CGFloat.zero) { result, rect in
-            let overlap = panelRect.intersection(rect)
-            return result + (overlap.isNull ? 0 : overlap.width * overlap.height)
+    private static func validSelectionRect(
+        _ rect: CGRect?,
+        in displays: [DisplayGeometry]
+    ) -> CGRect? {
+        guard let rect,
+              !rect.isNull, !rect.isEmpty,
+              [rect.minX, rect.minY, rect.width, rect.height].allSatisfy(\.isFinite),
+              displayContaining(rect, in: displays) != nil
+        else { return nil }
+        return rect
+    }
+
+    private static func displayContaining(
+        _ rect: CGRect,
+        in displays: [DisplayGeometry]
+    ) -> DisplayGeometry? {
+        var bestDisplay: DisplayGeometry?
+        var bestArea: CGFloat = 0
+        for display in displays {
+            let intersection = display.frame.intersection(rect)
+            let area = intersection.isNull ? 0 : intersection.width * intersection.height
+            if area > bestArea {
+                bestArea = area
+                bestDisplay = display
+            }
         }
-        let distance = hypot(origin.x - desired.x, origin.y - desired.y)
-        return overlapArea * 1_000_000 + distance
+        return bestDisplay
     }
 }
 
@@ -201,11 +213,23 @@ struct WindowPositioner: WindowPositioning {
     }
 
     func fittedPanelSize(for size: CGSize) -> CGSize {
+        fittedPanelSize(for: size, avoiding: nil)
+    }
+
+    func fittedPanelSize(for size: CGSize, avoiding rect: CGRect?) -> CGSize {
+        let displays = displayGeometries
+        let selectionDisplay = rect.flatMap { selection in
+            displays.first(where: { $0.frame.intersects(selection) })
+        }
         let display = WindowPlacementCalculator.activeDisplay(
             for: NSEvent.mouseLocation,
-            in: displayGeometries
+            in: displays
         )
-        return WindowPlacementCalculator.fittedPanelSize(size, in: display.visibleFrame, edgeInset: edgeInset)
+        return WindowPlacementCalculator.fittedPanelSize(
+            size,
+            in: (selectionDisplay ?? display).visibleFrame,
+            edgeInset: edgeInset
+        )
     }
 
     private var displayGeometries: [DisplayGeometry] {

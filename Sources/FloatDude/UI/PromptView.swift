@@ -4,13 +4,14 @@ import SwiftUI
 /// The one-shot prompt surface. It deliberately owns no networking or context
 /// persistence; a coordinator supplies the action and submit closures.
 struct PromptView: View {
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.colorScheme) private var scheme
 
     @Binding var prompt: String
     @Binding var selectedAction: PromptAction
 
     let selectedText: String
     let selectedSource: CapturedContext.Source?
+    let canRewriteSelection: Bool
     let contextGuidance: String?
     let isDisabled: Bool
     let onAction: ((PromptAction) -> Void)?
@@ -23,6 +24,7 @@ struct PromptView: View {
         prompt: Binding<String>,
         selectedText: String = "",
         selectedSource: CapturedContext.Source? = nil,
+        canRewriteSelection: Bool = false,
         contextGuidance: String? = nil,
         selectedAction: Binding<PromptAction> = .constant(.ask),
         isDisabled: Bool = false,
@@ -35,6 +37,7 @@ struct PromptView: View {
         self._selectedAction = selectedAction
         self.selectedText = selectedText
         self.selectedSource = selectedSource
+        self.canRewriteSelection = canRewriteSelection
         self.contextGuidance = contextGuidance
         self.isDisabled = isDisabled
         self.onAction = onAction
@@ -44,11 +47,12 @@ struct PromptView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            selectedContext
-            actionPicker
+        VStack(alignment: .leading, spacing: 10) {
+            if !selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || contextGuidance != nil {
+                selectedContext
+            }
             promptEditor
-            promptFooter
+            actionPicker
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .disabled(isDisabled)
@@ -56,41 +60,32 @@ struct PromptView: View {
     }
 
     private var selectedContext: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Label(selectedSource?.displayName ?? "Context", systemImage: "text.quote")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            Group {
-                if selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Text("No selection — ask anything")
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(FloatingPanelText.selectedPreview(selectedText))
-                        .lineLimit(2)
-                        .truncationMode(.tail)
-                        .textSelection(.enabled)
+        VStack(alignment: .leading, spacing: 6) {
+            if !selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                HStack(alignment: .top, spacing: 9) {
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(GlassPalette.coral(scheme).opacity(0.65))
+                        .frame(width: 2)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text((selectedSource?.displayName ?? "Selected text").uppercased())
+                            .font(.system(size: 9, weight: .semibold))
+                            .tracking(1)
+                            .foregroundStyle(.secondary)
+                        Text(FloatingPanelText.selectedPreview(selectedText))
+                            .font(.callout)
+                            .lineLimit(2)
+                            .truncationMode(.tail)
+                            .textSelection(.enabled)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-            }
-            .font(.callout)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 10)
-            .background {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(reduceTransparency ? Color(nsColor: .controlBackgroundColor) : Color.clear)
-                if !reduceTransparency {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(.thinMaterial)
-                }
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, 3)
             }
 
             if let contextGuidance {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 4) {
                     Label(contextGuidance, systemImage: "info.circle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -108,11 +103,15 @@ struct PromptView: View {
     }
 
     private var actionPicker: some View {
-        HStack(spacing: 8) {
-            ForEach([PromptAction.explain, .translate, .rewrite], id: \.self) { action in
+        HStack(spacing: 6) {
+            ForEach(availableActions, id: \.self) { action in
                 actionButton(action)
             }
         }
+    }
+
+    private var availableActions: [PromptAction] {
+        canRewriteSelection ? [.explain, .translate, .rewrite] : [.explain, .translate]
     }
 
     private func actionButton(_ action: PromptAction) -> some View {
@@ -128,44 +127,29 @@ struct PromptView: View {
                 Text(action.title)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
-                Spacer(minLength: 0)
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(.caption.weight(.bold))
                         .accessibilityLabel("Active")
                 }
             }
-            .font(.body.weight(isSelected ? .semibold : .regular))
-            .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+            .font(.system(size: 12, weight: .medium))
+            .frame(maxWidth: .infinity, minHeight: 26, alignment: .center)
             .contentShape(Rectangle())
-            .overlay(alignment: .bottom) {
-                if isSelected {
-                    Capsule()
-                        .fill(Color.accentColor)
-                        .frame(height: 2)
-                        .accessibilityHidden(true)
-                }
-            }
+
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(isSelected ? .primary : .secondary)
+        .buttonStyle(GlassActionStyle(selected: isSelected))
+        .foregroundStyle(isSelected ? GlassPalette.coral(scheme) : Color.primary)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
         .accessibilityHint(isSelected ? "Active action" : "Select this action")
     }
 
     private var promptEditor: some View {
         HStack(spacing: 8) {
-            TextField("What would you like to know?", text: $prompt, axis: .vertical)
+            TextField("Ask FloatDude…", text: $prompt, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.body)
+                .font(.system(size: 15))
                 .lineLimit(1...2)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.16), lineWidth: 1)
-                }
                 .focused($isPromptFocused)
                 .onSubmit { submitAsk() }
                 .accessibilityLabel("Ask Anything")
@@ -174,23 +158,26 @@ struct PromptView: View {
             Button {
                 submitAsk()
             } label: {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.title3)
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 28, height: 28)
+                    .background(GlassPalette.coral(scheme), in: Circle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.tint)
+            .foregroundStyle(scheme == .dark ? Color.black : Color.white)
+            .opacity(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isDisabled ? 0.4 : 1)
             .disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isDisabled)
             .accessibilityLabel("Ask FloatDude")
         }
+        .padding(.leading, 14)
+        .padding(.trailing, 8)
+        .padding(.vertical, 8)
+        .glassInset(cornerRadius: 17, emphasized: isPromptFocused)
         .onAppear {
             if selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 isPromptFocused = true
             }
         }
-    }
-
-    private var promptFooter: some View {
-        EmptyView()
     }
 
     private func submitAsk() {
