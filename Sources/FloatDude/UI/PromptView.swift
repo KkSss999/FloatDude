@@ -43,14 +43,8 @@ struct PromptView: View {
         self.onOpenAccessibilitySettings = onOpenAccessibilitySettings
     }
 
-    private var canSubmit: Bool {
-        let hasSelectedText = !selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let hasPrompt = !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return (hasSelectedText || hasPrompt) && !isDisabled
-    }
-
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             selectedContext
             actionPicker
             promptEditor
@@ -114,19 +108,9 @@ struct PromptView: View {
     }
 
     private var actionPicker: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Choose an action")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 104), spacing: 8)],
-                alignment: .leading,
-                spacing: 8
-            ) {
-                ForEach([PromptAction.explain, .translate, .rewrite], id: \.self) { action in
-                    actionButton(action)
-                }
+        HStack(spacing: 8) {
+            ForEach([PromptAction.explain, .translate, .rewrite], id: \.self) { action in
+                actionButton(action)
             }
         }
     }
@@ -138,12 +122,12 @@ struct PromptView: View {
             selectedAction = action
             onAction?(action)
         } label: {
-            HStack(spacing: 7) {
+            HStack(spacing: 6) {
                 Image(systemName: action.symbolName)
                     .accessibilityHidden(true)
                 Text(action.title)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
                 Spacer(minLength: 0)
                 if isSelected {
                     Image(systemName: "checkmark")
@@ -152,7 +136,7 @@ struct PromptView: View {
                 }
             }
             .font(.body.weight(isSelected ? .semibold : .regular))
-            .frame(maxWidth: .infinity, minHeight: 38, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
             .contentShape(Rectangle())
             .overlay(alignment: .bottom) {
                 if isSelected {
@@ -170,26 +154,33 @@ struct PromptView: View {
     }
 
     private var promptEditor: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Ask Anything")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+        HStack(spacing: 8) {
             TextField("What would you like to know?", text: $prompt, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.body)
-                .lineLimit(1...4)
+                .lineLimit(1...2)
                 .padding(.horizontal, 12)
-                .padding(.vertical, 10)
+                .padding(.vertical, 8)
                 .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(Color.primary.opacity(0.16), lineWidth: 1)
                 }
                 .focused($isPromptFocused)
-                .onSubmit { submit() }
+                .onSubmit { submitAsk() }
                 .accessibilityLabel("Ask Anything")
                 .accessibilityHint("Enter a question or instructions")
+
+            Button {
+                submitAsk()
+            } label: {
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.title3)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.tint)
+            .disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isDisabled)
+            .accessibilityLabel("Ask FloatDude")
         }
         .onAppear {
             if selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -199,36 +190,13 @@ struct PromptView: View {
     }
 
     private var promptFooter: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Button {
-                onCancel?()
-            } label: {
-                Label("Press Esc to close", systemImage: "escape")
-                    .font(.caption)
-            }
-            .buttonStyle(.borderless)
-            .keyboardShortcut(.escape)
-            .foregroundStyle(.secondary)
-            .accessibilityHint("Dismiss the panel")
-
-            Spacer(minLength: 0)
-
-            Button {
-                submit()
-            } label: {
-                Label("Run \(selectedAction.title)", systemImage: "arrow.up.circle.fill")
-                    .font(.body.weight(.semibold))
-                    .lineLimit(2)
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!canSubmit)
-            .keyboardShortcut(.return, modifiers: [])
-        }
+        EmptyView()
     }
 
-    private func submit() {
-        guard canSubmit else { return }
-        onSubmit?(selectedAction, prompt.trimmingCharacters(in: .whitespacesAndNewlines))
+    private func submitAsk() {
+        let normalizedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedPrompt.isEmpty, !isDisabled else { return }
+        onSubmit?(PromptAction.actionForSubmission(prompt: normalizedPrompt, fallback: selectedAction), normalizedPrompt)
     }
 }
 

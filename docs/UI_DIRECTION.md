@@ -52,8 +52,8 @@ The visual references suggest an upper bubble and a response sheet. The implemen
 ## Interaction hierarchy
 
 1. Selected text or a direct prompt is the context.
-2. `Explain`, `Translate`, and `Rewrite` are equal primary actions.
-3. `Ask anything…` is the escape hatch, not a fourth chat surface.
+2. With captured text, tapping `Explain`, `Translate`, or `Rewrite` starts that action immediately.
+3. `Ask anything…` always dispatches the Ask action, not whichever quick action was last selected.
 4. On first output token, the same panel grows downward and begins rendering the response.
 5. `Copy` copies only final visible response text. `Esc`, click-away, or a repeated shortcut cancels active streaming and dismisses the panel.
 

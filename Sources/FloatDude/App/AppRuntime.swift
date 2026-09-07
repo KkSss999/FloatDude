@@ -108,6 +108,7 @@ final class AppRuntime: ObservableObject {
         guard started else { return }
         started = false
         coordinator.cancelActiveRequest()
+        providerSession.clear()
         panelController.dismiss()
         hotkeyManager.unregister()
     }
@@ -120,6 +121,7 @@ final class AppRuntime: ObservableObject {
         panelController.present(
             content: { view },
             panelSize: panelSize(for: coordinator.panelState),
+            avoiding: coordinator.session.context?.selectionRect,
             activateForInput: coordinator.session.context == nil
         )
     }
@@ -128,11 +130,18 @@ final class AppRuntime: ObservableObject {
         guard state.isResponseVisible != lastResponseVisibility else { return }
         lastResponseVisibility = state.isResponseVisible
         panelController.update(
-            panelSize: panelSize(for: state)
+            panelSize: panelSize(for: state),
+            avoiding: coordinator.session.context?.selectionRect
         )
     }
 
     private func panelSize(for state: FloatingPanelState) -> CGSize {
-        CGSize(width: 400, height: state.isResponseVisible ? 640 : 260)
+        let hasContext = coordinator.session.context != nil
+        return switch state {
+        case .loading, .streaming, .completed, .cancelled, .error:
+            CGSize(width: 400, height: 420)
+        case .idle, .prompting:
+            CGSize(width: 400, height: hasContext ? 236 : 176)
+        }
     }
 }

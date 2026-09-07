@@ -1,11 +1,12 @@
 import Foundation
+import Darwin
 
 @main
 struct LiveValidation {
     static func main() async {
         guard let apiKey = ProcessInfo.processInfo.environment["FLOATDUDE_LIVE_KEY"], !apiKey.isEmpty else {
             print("LIVE_VALIDATION_KEY_MISSING")
-            return
+            exit(2)
         }
 
         do {
@@ -39,9 +40,14 @@ struct LiveValidation {
             print("LIVE_VALIDATION_HTTP_OK")
             print("LIVE_VALIDATION_TEXT_DELTA_COUNT=\(deltaCount)")
             print("LIVE_VALIDATION_COMPLETED=\(completed)")
+            guard deltaCount > 0, completed else {
+                print("LIVE_VALIDATION_INCOMPLETE")
+                exit(1)
+            }
         } catch {
             print("LIVE_VALIDATION_FAILED")
             print("LIVE_VALIDATION_ERROR=\(LLMSecretRedactor.redact(error.localizedDescription, apiKey: apiKey))")
+            exit(1)
         }
     }
 }

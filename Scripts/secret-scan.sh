@@ -6,7 +6,7 @@ pattern='sk-[A-Za-z0-9]{20,}|sk-proj-[A-Za-z0-9_-]{20,}|AIza[0-9A-Za-z_-]{20,}|x
 
 if [[ "${1:-}" == "--staged" ]]; then
     while IFS= read -r -d '' path; do
-        if rg -n -I -e "$pattern" -- "$path" >/dev/null 2>&1; then
+        if git show ":$path" | rg -I -e "$pattern" >/dev/null 2>&1; then
             printf 'secret-like credential pattern found in staged path: %s\n' "$path" >&2
             exit 1
         fi

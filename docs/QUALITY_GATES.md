@@ -20,7 +20,9 @@
 | Click outside the panel | Panel dismisses without retaining sensitive context in visible UI |
 | Copy response | Pasteboard receives exactly the final visible response |
 | Invalid endpoint/key | Human-readable error; key and Authorization header never rendered or logged |
-| Relaunch | Non-secret settings restore; API key remains only in Keychain |
+| Credential modes | No Authentication sends no header; Session Only survives panel dismissal but not app relaunch; Remember on This Mac is Keychain-only |
+| Stream termination | `[DONE]` or `message_stop` completes; an early EOF is reported as an error |
+| Relaunch | Non-secret settings restore; Session Only key is absent; Remembered key may be reloaded from Keychain |
 
 ## Performance targets
 
@@ -31,7 +33,8 @@
 
 ## Security review before handoff
 
-- Run `bash Scripts/secret-scan.sh --staged` before committing and keep the CI scan green.
+- Run `bash Scripts/secret-scan.sh --staged` before committing; it must inspect index content, not only the worktree.
 - Verify `git diff --cached` contains no API keys or Keychain values.
 - Search source and logs for `Authorization`, `api_key`, and `Bearer` before committing.
 - Confirm no request body, selected text, or response is sent anywhere except the user-configured model endpoint.
+- v0.1 uses local SwiftPM/Xcode validation and manual native acceptance. CI/CD is intentionally deferred to v0.5.0.

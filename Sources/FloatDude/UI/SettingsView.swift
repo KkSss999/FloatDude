@@ -124,7 +124,7 @@ struct SettingsView: View {
         case .noAuthentication:
             "No Keychain lookup, API key, or authentication header is used."
         case .thisSessionOnly:
-            "The API key stays in memory only and is cleared when this session ends, is cancelled, or the mode changes."
+            "The API key stays in memory only until FloatDude quits, you disconnect, or the mode changes."
         case .rememberOnThisMac:
             "The API key is saved only to this Mac's Keychain after you explicitly apply this mode."
         }

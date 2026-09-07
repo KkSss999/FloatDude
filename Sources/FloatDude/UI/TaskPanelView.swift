@@ -28,7 +28,7 @@ struct TaskPanelView: View {
             contextGuidance: coordinator.contextGuidance,
             selectedAction: $coordinator.selectedAction,
             handlers: FloatingPanelHandlers(
-                onAction: { action in coordinator.selectAction(action) },
+                onAction: { action in coordinator.runAction(action) },
                 onSubmit: { action, prompt in
                     coordinator.submit(action: action, userPrompt: prompt)
                 },

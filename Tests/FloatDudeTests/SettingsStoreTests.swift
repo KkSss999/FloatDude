@@ -4,13 +4,15 @@ import XCTest
 
 @MainActor
 final class SettingsStoreTests: XCTestCase {
-    func testFreshSettingsDefaultToNoAuthentication() throws {
+    func testFreshSettingsUseSessionOnlyForTheDefaultDeepSeekProfile() throws {
         let suiteName = "FloatDude.SettingsStoreTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let store = SettingsStore(defaults: defaults)
-        XCTAssertEqual(store.current.credentialMode, .noAuthentication)
+        XCTAssertEqual(store.current.credentialMode, .thisSessionOnly)
+        XCTAssertEqual(store.current.baseURL, URL(string: "https://api.deepseek.com/anthropic"))
+        XCTAssertEqual(store.current.model, "deepseek-v4-flash")
         XCTAssertNil(defaults.persistentDomain(forName: suiteName))
     }
 

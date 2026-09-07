@@ -93,7 +93,7 @@ final class LLMClientTests: XCTestCase {
     func testNoAuthenticationSendsNoAuthenticationHeaders() async throws {
         let transport = FakeTransport { _ in
             FakeTransport.response(chunks: [
-                Data("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n".utf8)
+                Data("data: [DONE]\n\n".utf8)
             ])
         }
         let client = try OpenAIChatCompletionsClient(
@@ -117,6 +117,39 @@ final class LLMClientTests: XCTestCase {
         XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
         XCTAssertNil(request.value(forHTTPHeaderField: "x-api-key"))
         XCTAssertNil(request.value(forHTTPHeaderField: "anthropic-version"))
+    }
+
+    func testIncompleteOpenAIAndAnthropicStreamsFailInsteadOfCompleting() async throws {
+        let openAI = try OpenAIChatCompletionsClient(
+            configuration: LLMConfiguration(baseURL: URL(string: "https://provider.example")!, model: "demo-model"),
+            apiKey: "test-api-key",
+            transport: FakeTransport { _ in
+                FakeTransport.response(chunks: [
+                    Data("data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n".utf8)
+                ])
+            }
+        )
+        let anthropic = try OpenAIChatCompletionsClient(
+            configuration: LLMConfiguration(
+                baseURL: URL(string: "https://api.deepseek.com/anthropic")!,
+                model: "deepseek-v4-flash"
+            ),
+            apiKey: "test-api-key",
+            transport: FakeTransport { _ in
+                FakeTransport.response(chunks: [
+                    Data("event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"partial\"}}\n\n".utf8)
+                ])
+            }
+        )
+
+        for client in [openAI, anthropic] {
+            do {
+                for try await _ in client.stream(LLMRequest(action: .ask, context: nil, userPrompt: "test")) {}
+                XCTFail("Expected incomplete stream failure")
+            } catch let error as LLMClientError {
+                XCTAssertEqual(error, .incompleteStream)
+            }
+        }
     }
 
     func testProductionURLSessionTransportStreamsThroughURLProtocol() async throws {

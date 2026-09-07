@@ -1,5 +1,6 @@
 import XCTest
 import ApplicationServices
+import CoreGraphics
 @testable import FloatDude
 
 final class ContextCaptureTests: XCTestCase {
@@ -21,6 +22,28 @@ final class ContextCaptureTests: XCTestCase {
             )
         )
         XCTAssertEqual(pasteboard.readCount, 0)
+    }
+
+    func testAccessibilitySelectionCarriesBoundsForPanelAvoidance() async {
+        let rect = CGRect(x: 100, y: 200, width: 180, height: 24)
+        let capture = SelectionCapture(
+            accessibility: FakeAccessibilityProvider(selectedText: "selected", selectionRect: rect),
+            pasteboard: FakePasteboard()
+        )
+
+        let result = await capture.captureContext()
+
+        XCTAssertEqual(
+            result,
+            .captured(
+                CapturedContext(
+                    text: "selected",
+                    source: .accessibilitySelection,
+                    applicationName: nil,
+                    selectionRect: rect
+                )
+            )
+        )
     }
 
     func testDeniedAccessibilityFallsBackToClipboard() async {
@@ -178,14 +201,20 @@ private struct FakeAccessibilityProvider: AccessibilityProviding {
 
     let mode: Mode
     let selectedText: String?
+    let selectionRect: CGRect?
 
     var isTrusted: Bool {
         mode != .denied
     }
 
-    init(mode: Mode = .available, selectedText: String? = nil) {
+    init(
+        mode: Mode = .available,
+        selectedText: String? = nil,
+        selectionRect: CGRect? = nil
+    ) {
         self.mode = mode
         self.selectedText = selectedText
+        self.selectionRect = selectionRect
     }
 
     func focusedElement() throws -> AXUIElement? {
@@ -206,6 +235,10 @@ private struct FakeAccessibilityProvider: AccessibilityProviding {
             throw FakeError.failed
         }
         return selectedText
+    }
+
+    func selectedTextBounds(from focusedElement: AXUIElement) throws -> CGRect? {
+        selectionRect
     }
 }
 

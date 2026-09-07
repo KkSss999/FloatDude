@@ -65,7 +65,25 @@ final class TaskCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(coordinator.session.phase, .cancelled)
         XCTAssertEqual(coordinator.session.response, "")
-        XCTAssertFalse(providerSession.hasAPIKey)
+        XCTAssertTrue(providerSession.hasAPIKey)
+    }
+
+    func testContextActionStreamsImmediatelyAndKeepsSessionCredentials() async throws {
+        let requestBox = RequestBox()
+        let providerSession = ProviderSession(
+            mode: .thisSessionOnly,
+            keychainStore: TestKeychain()
+        )
+        try providerSession.configure(mode: .thisSessionOnly, apiKey: "test-key")
+        let coordinator = makeCoordinator(requestBox: requestBox, providerSession: providerSession)
+
+        coordinator.beginInvocation()
+        await waitUntil { coordinator.session.phase == .contextCaptured }
+        coordinator.runAction(.translate)
+        await waitUntil { coordinator.session.phase == .completed }
+
+        XCTAssertEqual(requestBox.request?.action, .translate)
+        XCTAssertTrue(providerSession.hasAPIKey)
     }
 
     private func makeCoordinator(

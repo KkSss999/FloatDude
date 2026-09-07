@@ -222,7 +222,7 @@ struct FloatingPanel: View {
     }
 
     private var panelSurface: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 12) {
             panelHeader
 
             PromptView(
@@ -249,10 +249,10 @@ struct FloatingPanel: View {
                 .transition(reduceMotion ? .identity : .opacity)
             }
         }
-        .padding(20)
+        .padding(16)
         .frame(minWidth: 336, idealWidth: 400, maxWidth: 456, alignment: .topLeading)
         .fixedSize(horizontal: false, vertical: true)
-        .glassMaterial(cornerRadius: 20)
+        .glassMaterial(cornerRadius: 22)
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.24), value: didExpandOnce)
         .transaction { transaction in
             if reduceMotion { transaction.animation = nil }

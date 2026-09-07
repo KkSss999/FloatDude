@@ -189,8 +189,7 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
             try emit(event, completed: &completed, continuation: continuation, gate: gate)
         }
         if !completed {
-            try checkCancellation(gate)
-            _ = continuation.yield(.completed)
+            throw LLMClientError.incompleteStream
         }
     }
 

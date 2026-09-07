@@ -12,4 +12,8 @@ enum PromptAction: String, CaseIterable, Codable, Sendable {
         case .ask: "Ask Anything"
         }
     }
+
+    static func actionForSubmission(prompt: String, fallback: PromptAction) -> PromptAction {
+        prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? fallback : .ask
+    }
 }

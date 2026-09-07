@@ -45,45 +45,47 @@ protocol KeychainBackend: Sendable {
 
 struct SecurityKeychainBackend: KeychainBackend {
     func read(service: String, account: String) -> KeychainReadResult {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+        var query = itemQuery(service: service, account: account)
+        query.merge([
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
-        ]
+        ]) { _, new in new }
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         return KeychainReadResult(status: status, data: item as? Data)
     }
 
     func add(data: Data, service: String, account: String) -> OSStatus {
-        let attributes: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+        var attributes = itemQuery(service: service, account: account)
+        attributes.merge([
             kSecValueData as String: data,
-        ]
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+        ]) { _, new in new }
         return SecItemAdd(attributes as CFDictionary, nil)
     }
 
     func update(data: Data, service: String, account: String) -> OSStatus {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
+        let query = itemQuery(service: service, account: account)
+        let attributes: [String: Any] = [
+            kSecValueData as String: data,
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
-        let attributes: [String: Any] = [kSecValueData as String: data]
         return SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
     }
 
     func delete(service: String, account: String) -> OSStatus {
-        let query: [String: Any] = [
+        let query = itemQuery(service: service, account: account)
+        return SecItemDelete(query as CFDictionary)
+    }
+
+    private func itemQuery(service: String, account: String) -> [String: Any] {
+        [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
+            kSecAttrSynchronizable as String: kCFBooleanFalse as Any,
+            kSecUseDataProtectionKeychain as String: true,
         ]
-        return SecItemDelete(query as CFDictionary)
     }
 }
 

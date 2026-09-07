@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 struct CapturedContext: Sendable, Equatable {
     enum Source: String, Sendable, Equatable {
@@ -18,6 +19,21 @@ struct CapturedContext: Sendable, Equatable {
     let text: String
     let source: Source
     let applicationName: String?
+    /// AppKit desktop coordinates for placement avoidance when Accessibility
+    /// exposes the bounds of the source selection.
+    let selectionRect: CGRect?
+
+    init(
+        text: String,
+        source: Source,
+        applicationName: String?,
+        selectionRect: CGRect? = nil
+    ) {
+        self.text = text
+        self.source = source
+        self.applicationName = applicationName
+        self.selectionRect = selectionRect
+    }
 }
 
 enum ContextCaptureError: Error, LocalizedError, Sendable, Equatable {
@@ -81,8 +97,12 @@ struct SelectionCapture: ContextCapturing {
     func captureContext(directInput: String? = nil) async -> ContextCaptureResult {
         // This method performs only short, synchronous system reads. The
         // coordinator must call it before showing/activating the panel.
-        if let selectedText = readSelectedText(),
-           let result = makeResult(text: selectedText, source: .accessibilitySelection) {
+        if let selection = readSelection(),
+           let result = makeResult(
+               text: selection.text,
+               source: .accessibilitySelection,
+               selectionRect: selection.rect
+           ) {
             return result
         }
 
@@ -103,12 +123,15 @@ struct SelectionCapture: ContextCapturing {
             ?? .unavailable(reason: .noSelectionOrClipboard)
     }
 
-    private func readSelectedText() -> String? {
+    private func readSelection() -> (text: String, rect: CGRect?)? {
         do {
             guard let focusedElement = try accessibility.focusedElement() else {
                 return nil
             }
-            return try accessibility.selectedText(from: focusedElement)
+            guard let text = try accessibility.selectedText(from: focusedElement) else {
+                return nil
+            }
+            return (text, try? accessibility.selectedTextBounds(from: focusedElement))
         } catch {
             // Accessibility is intentionally non-blocking. AX errors and
             // permission changes simply advance the fallback chain.
@@ -120,7 +143,11 @@ struct SelectionCapture: ContextCapturing {
         pasteboard.readText()
     }
 
-    private func makeResult(text: String, source: CapturedContext.Source) -> ContextCaptureResult? {
+    private func makeResult(
+        text: String,
+        source: CapturedContext.Source,
+        selectionRect: CGRect? = nil
+    ) -> ContextCaptureResult? {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
@@ -140,7 +167,8 @@ struct SelectionCapture: ContextCapturing {
             CapturedContext(
                 text: text,
                 source: source,
-                applicationName: nil
+                applicationName: nil,
+                selectionRect: selectionRect
             )
         )
     }

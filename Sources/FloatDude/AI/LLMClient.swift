@@ -46,6 +46,7 @@ enum LLMClientError: LocalizedError, Sendable, Equatable {
     case httpStatus(Int, String)
     case provider(String)
     case malformedPayload
+    case incompleteStream
 
     var errorDescription: String? {
         switch self {
@@ -65,6 +66,8 @@ enum LLMClientError: LocalizedError, Sendable, Equatable {
             "The provider returned an error: \(message)"
         case .malformedPayload:
             "The provider returned a malformed streaming response."
+        case .incompleteStream:
+            "The provider closed the streaming response before completion."
         }
     }
 }

@@ -101,6 +101,12 @@ final class TaskCoordinator: ObservableObject {
         }
     }
 
+    func runAction(_ action: PromptAction) {
+        selectAction(action)
+        guard session.context != nil else { return }
+        submit(action: action, userPrompt: "")
+    }
+
     func submit() {
         guard let invocationID = activeInvocationID else {
             beginInvocation()
@@ -196,7 +202,6 @@ final class TaskCoordinator: ObservableObject {
     func cancelAndDismiss() {
         activeInvocationID = nil
         cancelTasks()
-        providerSession.clear()
         session.apply(.cancelled)
         onDismissPanel?()
     }
@@ -206,7 +211,6 @@ final class TaskCoordinator: ObservableObject {
     func cancelActiveRequest() {
         activeInvocationID = nil
         cancelTasks()
-        providerSession.clear()
         if session.phase != .cancelled {
             session.apply(.cancelled)
         }
@@ -219,7 +223,6 @@ final class TaskCoordinator: ObservableObject {
     func dismissWithoutCancellation() {
         activeInvocationID = nil
         cancelTasks()
-        providerSession.clear()
         session.apply(.cancelled)
         onDismissPanel?()
     }

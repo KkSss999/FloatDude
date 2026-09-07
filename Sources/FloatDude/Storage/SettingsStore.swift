@@ -47,7 +47,7 @@ struct AppSettings: Sendable, Equatable {
         baseURL: URL(string: "https://api.deepseek.com/anthropic"),
         model: "deepseek-v4-flash",
         hotkeyDescription: "Option-Space",
-        credentialMode: .noAuthentication
+        credentialMode: .thisSessionOnly
     )
 }
 

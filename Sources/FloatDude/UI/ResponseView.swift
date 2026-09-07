@@ -94,7 +94,7 @@ struct ResponseView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(14)
         }
-        .frame(maxHeight: 420)
+        .frame(maxHeight: 150)
         .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
