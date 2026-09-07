@@ -47,6 +47,7 @@ enum LLMClientError: LocalizedError, Sendable, Equatable {
     case provider(String)
     case malformedPayload
     case incompleteStream
+    case sensitiveContent
 
     var errorDescription: String? {
         switch self {
@@ -68,6 +69,8 @@ enum LLMClientError: LocalizedError, Sendable, Equatable {
             "The provider returned a malformed streaming response."
         case .incompleteStream:
             "The provider closed the streaming response before completion."
+        case .sensitiveContent:
+            "This content appears to contain a credential and was not sent."
         }
     }
 }

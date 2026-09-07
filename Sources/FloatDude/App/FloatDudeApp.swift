@@ -16,7 +16,8 @@ struct FloatDudeApp: App {
             SettingsView(
                 settingsStore: runtime.settingsStore,
                 providerSession: runtime.providerSession,
-                hotkeyManager: runtime.hotkeyManager
+                hotkeyManager: runtime.hotkeyManager,
+                clipboardManager: runtime.clipboardManager
             )
         }
     }

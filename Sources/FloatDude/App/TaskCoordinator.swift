@@ -133,6 +133,14 @@ final class TaskCoordinator: ObservableObject {
             return
         }
 
+        guard ![context?.text, normalizedPrompt]
+            .compactMap({ $0 })
+            .contains(where: SensitiveTextDetector.containsCredential)
+        else {
+            session.apply(.failed("This content appears to contain a credential and was not sent."))
+            return
+        }
+
         let credentials: ProviderCredentials
         do {
             do {
@@ -261,7 +269,7 @@ final class TaskCoordinator: ObservableObject {
         switch result {
         case let .captured(captured):
             context = captured
-            contextGuidance = nil
+            contextGuidance = captured.guidance
         case let .unavailable(reason):
             context = nil
             contextGuidance = reason.guidance

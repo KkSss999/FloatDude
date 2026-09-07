@@ -86,6 +86,26 @@ final class TaskCoordinatorTests: XCTestCase {
         XCTAssertTrue(providerSession.hasAPIKey)
     }
 
+    func testCredentialLikeContextNeverStartsAProviderRequest() async {
+        let requestBox = RequestBox()
+        let coordinator = makeCoordinator(
+            context: CapturedContext(
+                text: "sk-" + String(repeating: "f", count: 24),
+                source: .clipboard,
+                applicationName: nil
+            ),
+            requestBox: requestBox
+        )
+
+        coordinator.beginInvocation()
+        await waitUntil { coordinator.session.phase == .contextCaptured }
+        coordinator.runAction(.translate)
+
+        XCTAssertEqual(coordinator.session.phase, .failed)
+        XCTAssertNil(requestBox.request)
+        XCTAssertFalse(coordinator.session.errorMessage?.contains("sk-") == true)
+    }
+
     private func makeCoordinator(
         context: CapturedContext? = CapturedContext(text: "context", source: .clipboard, applicationName: nil),
         settings: TestSettingsStore = TestSettingsStore(settings: AppSettings(

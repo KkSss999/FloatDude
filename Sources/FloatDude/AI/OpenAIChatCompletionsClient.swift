@@ -300,6 +300,12 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
     private func requestBody(for request: LLMRequest) throws -> Data {
         let context = request.context?.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let prompt = request.userPrompt?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ![context, prompt]
+            .compactMap({ $0 })
+            .contains(where: SensitiveTextDetector.containsCredential)
+        else {
+            throw LLMClientError.sensitiveContent
+        }
         let userContent: String
         switch (context?.isEmpty == false, prompt?.isEmpty == false) {
         case (true, true):

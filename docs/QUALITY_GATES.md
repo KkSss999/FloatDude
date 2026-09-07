@@ -20,6 +20,8 @@
 | Click outside the panel | Key panel dismisses without retaining sensitive context in visible UI |
 | Drag panel background | Panel moves freely; response expansion preserves the dragged top anchor |
 | Missing/invalid credential | Human-readable error exposes a working Settings button; legacy default DeepSeek/NoAuth state migrates to Session Only |
+| Clipboard contains a credential | FloatDude blocks it before preview/request and offers selection or direct-input recovery |
+| Apply credentials from clipboard | Matching API-key clipboard content is cleared; unrelated clipboard content is preserved |
 | Copy response | Pasteboard receives exactly the final visible response |
 | Invalid endpoint/key | Human-readable error; key and Authorization header never rendered or logged |
 | Credential modes | No Authentication sends no header; Session Only survives panel dismissal but not app relaunch; Remember on This Mac is Keychain-only |
@@ -39,4 +41,5 @@
 - Verify `git diff --cached` contains no API keys or Keychain values.
 - Search source and logs for `Authorization`, `api_key`, and `Bearer` before committing.
 - Confirm no request body, selected text, or response is sent anywhere except the user-configured model endpoint.
+- Verify recognized credential patterns are rejected independently by context capture, task coordination, and network request construction.
 - v0.1 uses local SwiftPM/Xcode validation and manual native acceptance. CI/CD is intentionally deferred to v0.5.0.

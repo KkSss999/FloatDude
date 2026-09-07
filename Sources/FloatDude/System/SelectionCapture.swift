@@ -22,27 +22,34 @@ struct CapturedContext: Sendable, Equatable {
     /// AppKit desktop coordinates for placement avoidance when Accessibility
     /// exposes the bounds of the source selection.
     let selectionRect: CGRect?
+    /// Safe, non-sensitive explanation for why a fallback source was used.
+    let guidance: String?
 
     init(
         text: String,
         source: Source,
         applicationName: String?,
-        selectionRect: CGRect? = nil
+        selectionRect: CGRect? = nil,
+        guidance: String? = nil
     ) {
         self.text = text
         self.source = source
         self.applicationName = applicationName
         self.selectionRect = selectionRect
+        self.guidance = guidance
     }
 }
 
 enum ContextCaptureError: Error, LocalizedError, Sendable, Equatable {
     case exceedsCharacterLimit(source: CapturedContext.Source, count: Int, limit: Int)
+    case sensitiveContent(source: CapturedContext.Source)
 
     var errorDescription: String? {
         switch self {
         case let .exceedsCharacterLimit(source, count, limit):
             "The \(source.rawValue) context contains \(count) characters; the maximum is \(limit)."
+        case let .sensitiveContent(source):
+            "The \(source.displayName.lowercased()) appears to contain a credential and was not sent."
         }
     }
 }
@@ -50,6 +57,7 @@ enum ContextCaptureError: Error, LocalizedError, Sendable, Equatable {
 enum ContextCaptureUnavailableReason: String, Sendable, Equatable {
     case accessibilityPermissionDenied
     case noSelectionOrClipboard
+    case sensitiveClipboardBlocked
 
     var guidance: String {
         switch self {
@@ -57,6 +65,8 @@ enum ContextCaptureUnavailableReason: String, Sendable, Equatable {
             "Accessibility access is unavailable. Clipboard fallback and direct input are still available."
         case .noSelectionOrClipboard:
             "No selection or clipboard text is available. Enter a prompt below."
+        case .sensitiveClipboardBlocked:
+            "Clipboard content looks like a credential and was blocked. Select text again or type a prompt instead."
         }
     }
 }
@@ -106,9 +116,19 @@ struct SelectionCapture: ContextCapturing {
             return result
         }
 
-        if let clipboardText = readClipboardText(),
-           let result = makeResult(text: clipboardText, source: .clipboard) {
-            return result
+        if let clipboardText = readClipboardText() {
+            guard !SensitiveTextDetector.containsCredential(in: clipboardText) else {
+                return .unavailable(reason: .sensitiveClipboardBlocked)
+            }
+            if let result = makeResult(
+                text: clipboardText,
+                source: .clipboard,
+                guidance: accessibility.isTrusted
+                    ? nil
+                    : "Using Clipboard because Accessibility access is unavailable."
+            ) {
+                return result
+            }
         }
 
         guard let directInput else {
@@ -146,10 +166,15 @@ struct SelectionCapture: ContextCapturing {
     private func makeResult(
         text: String,
         source: CapturedContext.Source,
-        selectionRect: CGRect? = nil
+        selectionRect: CGRect? = nil,
+        guidance: String? = nil
     ) -> ContextCaptureResult? {
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
+        }
+
+        guard !SensitiveTextDetector.containsCredential(in: text) else {
+            return .rejected(.sensitiveContent(source: source))
         }
 
         let count = text.count
@@ -168,7 +193,8 @@ struct SelectionCapture: ContextCapturing {
                 text: text,
                 source: source,
                 applicationName: nil,
-                selectionRect: selectionRect
+                selectionRect: selectionRect,
+                guidance: guidance
             )
         )
     }

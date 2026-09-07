@@ -16,4 +16,14 @@ final class PromptActionTests: XCTestCase {
             .rewrite
         )
     }
+
+    func testSensitiveTextDetectorRecognizesCredentialsWithoutMatchingNormalText() {
+        XCTAssertTrue(SensitiveTextDetector.containsCredential(
+            in: "sk-" + String(repeating: "c", count: 24)
+        ))
+        XCTAssertTrue(SensitiveTextDetector.containsCredential(
+            in: "Authorization: Bearer " + String(repeating: "d", count: 24)
+        ))
+        XCTAssertFalse(SensitiveTextDetector.containsCredential(in: "Explain tokio::spawn clearly."))
+    }
 }

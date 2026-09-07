@@ -59,7 +59,8 @@ final class ContextCaptureTests: XCTestCase {
                 CapturedContext(
                     text: "clipboard fallback",
                     source: .clipboard,
-                    applicationName: nil
+                    applicationName: nil,
+                    guidance: "Using Clipboard because Accessibility access is unavailable."
                 )
             )
         )
@@ -189,6 +190,33 @@ final class ContextCaptureTests: XCTestCase {
 
         let result = await capture.captureContext()
         XCTAssertEqual(result, .unavailable(reason: .accessibilityPermissionDenied))
+    }
+
+    func testSensitiveClipboardIsBlockedWithoutReflectingItsValue() async {
+        let sensitiveValue = "sk-" + String(repeating: "a", count: 24)
+        let capture = SelectionCapture(
+            accessibility: FakeAccessibilityProvider(mode: .denied),
+            pasteboard: FakePasteboard(text: sensitiveValue)
+        )
+
+        let result = await capture.captureContext()
+
+        XCTAssertEqual(result, .unavailable(reason: .sensitiveClipboardBlocked))
+        XCTAssertFalse(String(describing: result).contains(sensitiveValue))
+    }
+
+    func testSensitiveSelectionIsRejectedBeforeClipboardFallback() async {
+        let sensitiveValue = "sk-" + String(repeating: "b", count: 24)
+        let pasteboard = FakePasteboard(text: "safe clipboard")
+        let capture = SelectionCapture(
+            accessibility: FakeAccessibilityProvider(selectedText: sensitiveValue),
+            pasteboard: pasteboard
+        )
+
+        let result = await capture.captureContext()
+
+        XCTAssertEqual(result, .rejected(.sensitiveContent(source: .accessibilitySelection)))
+        XCTAssertEqual(pasteboard.readCount, 0)
     }
 }
 

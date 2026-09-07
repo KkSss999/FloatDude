@@ -7,6 +7,7 @@ struct SettingsView: View {
     private let settingsStore: any SettingsStoring
     private let providerSession: any ProviderSessionManaging
     private let hotkeyManager: (any GlobalHotkeyManaging)?
+    private let clipboardManager: any ClipboardManaging
 
     @State private var endpoint: String
     @State private var model: String
@@ -21,11 +22,13 @@ struct SettingsView: View {
     init(
         settingsStore: any SettingsStoring,
         providerSession: any ProviderSessionManaging,
-        hotkeyManager: (any GlobalHotkeyManaging)? = nil
+        hotkeyManager: (any GlobalHotkeyManaging)? = nil,
+        clipboardManager: any ClipboardManaging = ClipboardManager()
     ) {
         self.settingsStore = settingsStore
         self.providerSession = providerSession
         self.hotkeyManager = hotkeyManager
+        self.clipboardManager = clipboardManager
         let settings = settingsStore.current
         _endpoint = State(initialValue: settings.baseURL?.absoluteString ?? "")
         _model = State(initialValue: settings.model)
@@ -193,6 +196,9 @@ struct SettingsView: View {
             mode: credentialMode,
             apiKey: enteredKey.isEmpty ? nil : enteredKey
         )
+        if !enteredKey.isEmpty {
+            clipboardManager.clearText(ifMatching: enteredKey)
+        }
         apiKey.removeAll(keepingCapacity: false)
         hasAPIKey = providerSession.hasAPIKey
         hasRememberedAPIKey = providerSession.hasRememberedAPIKey

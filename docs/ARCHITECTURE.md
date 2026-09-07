@@ -28,10 +28,12 @@ There is no model-to-tool execution loop, autonomous planning, chat history, clo
 ## Required contracts
 
 - Accessibility is best-effort. `ContextCapturing` must fall back in this order: selection, clipboard, direct input.
+- Credential-like content is blocked before it can become context. Clipboard fallback must never preview or transmit an API key, authorization header, private key, or recognized provider token.
 - Credentials are explicit: No Authentication sends no auth header, This Session Only retains a key only for the process lifetime, and Remember on This Mac persists an opt-in device-local key. No API key may appear in `AppSettings`, logs, errors, analytics, or endpoint URLs.
 - A panel dismissal cancels the task and clears task context, not the provider session. Provider credentials clear only on app termination, disconnect, mode change, replacement, or explicit forget.
 - `LLMClient` is provider-independent at the application boundary. v0.1 implements OpenAI Chat Completions SSE and Anthropic Messages SSE.
 - A stream is complete only after its protocol terminal signal (`[DONE]` or `message_stop`); a clean early EOF is an error.
+- Settings clears the clipboard only when its normalized text exactly matches the API key just applied; unrelated clipboard content is never modified.
 - `FloatingPanel` is a SwiftUI content host. An AppKit `NSPanel` controller must own panel level, focus, location, activation, and dismissal.
 - System actions in later releases require explicit user confirmation. Do not add an agent/tool loop to v0.1.
 

@@ -152,6 +152,31 @@ final class LLMClientTests: XCTestCase {
         }
     }
 
+    func testCredentialLikeContextIsRejectedBeforeOpeningTransport() async throws {
+        let transport = FakeTransport { _ in
+            FakeTransport.response(chunks: [Data("data: [DONE]\n\n".utf8)])
+        }
+        let client = try makeClient(transport: transport)
+        let sensitiveValue = "sk-" + String(repeating: "e", count: 24)
+
+        do {
+            for try await _ in client.stream(LLMRequest(
+                action: .translate,
+                context: CapturedContext(
+                    text: sensitiveValue,
+                    source: .clipboard,
+                    applicationName: nil
+                ),
+                userPrompt: nil
+            )) {}
+            XCTFail("Expected sensitive-content rejection")
+        } catch let error as LLMClientError {
+            XCTAssertEqual(error, .sensitiveContent)
+            XCTAssertFalse(error.localizedDescription.contains(sensitiveValue))
+        }
+        XCTAssertNil(transport.lastRequest)
+    }
+
     func testProductionURLSessionTransportStreamsThroughURLProtocol() async throws {
         URLProtocolStub.configure(chunks: [
             Data("data: {\"choices\":[{\"delta\":{\"content\":\"local \"}}]}\n\n".utf8),
