@@ -20,6 +20,7 @@
 | Click outside the panel | Key panel dismisses without retaining sensitive context in visible UI |
 | Drag panel background | Panel moves freely; response expansion preserves the dragged top anchor |
 | Missing/invalid credential | Human-readable error exposes a working Settings button; legacy default DeepSeek/NoAuth state migrates to Session Only |
+| Open Settings before first hotkey | Menu-bar Settings opens a key settings window without requiring a prior panel invocation |
 | Clipboard contains a credential | FloatDude blocks it before preview/request and offers selection or direct-input recovery |
 | Apply credentials from clipboard | Matching API-key clipboard content is cleared; unrelated clipboard content is preserved |
 | Copy response | Pasteboard receives exactly the final visible response |

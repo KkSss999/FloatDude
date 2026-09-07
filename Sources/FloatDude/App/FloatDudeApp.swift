@@ -11,15 +11,6 @@ struct FloatDudeApp: App {
             MenuBarView(runtime: runtime)
         }
         .menuBarExtraStyle(.window)
-
-        Settings {
-            SettingsView(
-                settingsStore: runtime.settingsStore,
-                providerSession: runtime.providerSession,
-                hotkeyManager: runtime.hotkeyManager,
-                clipboardManager: runtime.clipboardManager
-            )
-        }
     }
 }
 
@@ -39,8 +30,8 @@ private struct MenuBarView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Divider()
-            SettingsLink {
-                Text("Settings…")
+            Button("Settings…") {
+                runtime.openSettings()
             }
             Button("Quit FloatDude") {
                 NSApplication.shared.terminate(nil)

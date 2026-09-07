@@ -91,6 +91,35 @@ final class PanelLifecycleTests: XCTestCase {
         XCTAssertEqual(panel.frame.maxY, originalTop, accuracy: 0.5)
         controller.dismiss()
     }
+
+    @MainActor
+    func testSettingsWindowOpensBeforeAnyPanelInvocation() throws {
+        let suiteName = "FloatDude.SettingsWindowControllerTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settingsStore = SettingsStore(defaults: defaults)
+        settingsStore.save(AppSettings(
+            baseURL: URL(string: "http://127.0.0.1:11434"),
+            model: "local-model",
+            hotkeyDescription: "Option-Space",
+            credentialMode: .noAuthentication
+        ))
+        let providerSession = ProviderSession(
+            mode: .noAuthentication,
+            keychainStore: KeychainStore(service: suiteName, account: "test")
+        )
+        let controller = SettingsWindowController(
+            settingsStore: settingsStore,
+            providerSession: providerSession
+        )
+
+        XCTAssertFalse(controller.window?.isVisible == true)
+        controller.present()
+        XCTAssertTrue(controller.window?.isVisible == true)
+        XCTAssertTrue(controller.window?.canBecomeKey == true)
+        XCTAssertEqual(controller.window?.title, "FloatDude Settings")
+        controller.close()
+    }
 }
 
 @MainActor

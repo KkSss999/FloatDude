@@ -12,6 +12,7 @@ final class AppRuntime: ObservableObject {
     let contextCapturer: SelectionCapture
     let hotkeyManager: CarbonGlobalHotkey
     let panelController: FloatingPanelController
+    let settingsWindowController: SettingsWindowController
     let coordinator: TaskCoordinator
     @Published private(set) var startupError: String?
 
@@ -73,6 +74,12 @@ final class AppRuntime: ObservableObject {
                 coordinator?.cancelActiveRequest()
             }
         )
+        let settingsWindowController = SettingsWindowController(
+            settingsStore: settingsStore,
+            providerSession: providerSession,
+            hotkeyManager: hotkeyManager,
+            clipboardManager: clipboardManager
+        )
 
         self.settingsStore = settingsStore
         self.providerSession = providerSession
@@ -80,6 +87,7 @@ final class AppRuntime: ObservableObject {
         self.contextCapturer = contextCapturer
         self.hotkeyManager = hotkeyManager
         self.panelController = panelController
+        self.settingsWindowController = settingsWindowController
         self.coordinator = coordinator
         self.startupError = nil
 
@@ -110,18 +118,12 @@ final class AppRuntime: ObservableObject {
         coordinator.cancelActiveRequest()
         providerSession.clear()
         panelController.dismiss()
+        settingsWindowController.close()
         hotkeyManager.unregister()
     }
 
     func openSettings() {
-        NSApp.activate(ignoringOtherApps: true)
-        if NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil) {
-            return
-        }
-        if NSApp.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil) {
-            return
-        }
-        startupError = "Settings could not be opened. Use the FloatDude menu-bar item and choose Settings…"
+        settingsWindowController.present()
     }
 
     private func presentPanel() {

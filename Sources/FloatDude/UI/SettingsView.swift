@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// Dedicated Settings scene content. API keys are selected explicitly as
@@ -226,5 +227,54 @@ struct SettingsView: View {
     private func showError(_ message: String) {
         statusIsError = true
         statusMessage = message
+    }
+}
+
+/// App-owned settings window that is available immediately after an LSUIElement
+/// app launches. It deliberately does not depend on SwiftUI's Settings scene or
+/// on the floating panel having become key first.
+@MainActor
+final class SettingsWindowController: NSWindowController, NSWindowDelegate {
+    init(
+        settingsStore: any SettingsStoring,
+        providerSession: any ProviderSessionManaging,
+        hotkeyManager: (any GlobalHotkeyManaging)? = nil,
+        clipboardManager: any ClipboardManaging = ClipboardManager()
+    ) {
+        let view = SettingsView(
+            settingsStore: settingsStore,
+            providerSession: providerSession,
+            hotkeyManager: hotkeyManager,
+            clipboardManager: clipboardManager
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 520),
+            styleMask: [.titled, .closable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "FloatDude Settings"
+        window.contentViewController = NSHostingController(rootView: view)
+        window.isReleasedWhenClosed = false
+        window.setFrameAutosaveName("FloatDudeSettingsWindow")
+        window.center()
+        super.init(window: window)
+        window.delegate = self
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func present() {
+        NSApp.activate(ignoringOtherApps: true)
+        showWindow(nil)
+        window?.makeKeyAndOrderFront(nil)
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        sender.orderOut(nil)
+        return false
     }
 }
