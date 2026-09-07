@@ -59,7 +59,6 @@ struct SecurityKeychainBackend: KeychainBackend {
         var attributes = itemQuery(service: service, account: account)
         attributes.merge([
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]) { _, new in new }
         return SecItemAdd(attributes as CFDictionary, nil)
     }
@@ -68,7 +67,6 @@ struct SecurityKeychainBackend: KeychainBackend {
         let query = itemQuery(service: service, account: account)
         let attributes: [String: Any] = [
             kSecValueData as String: data,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
         return SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
     }
@@ -83,8 +81,11 @@ struct SecurityKeychainBackend: KeychainBackend {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecAttrSynchronizable as String: kCFBooleanFalse as Any,
-            kSecUseDataProtectionKeychain as String: true,
+            // v0.1 is an ad-hoc signed, unsandboxed macOS app. Use the
+            // file-based login keychain with its default per-app ACL. The
+            // data-protection implementation requires signing entitlements
+            // absent from this build (-34018). Never relax the default ACL.
+            kSecUseDataProtectionKeychain as String: false,
         ]
     }
 }
@@ -103,14 +104,14 @@ enum KeychainStoreError: LocalizedError, Sendable, Equatable {
             "Enter an API key before saving."
         case .invalidData:
             "The saved API key could not be read. Save it again."
-        case .readFailed:
-            "The API key could not be read from Keychain. Try again."
-        case .saveFailed:
-            "The API key could not be saved to Keychain. Try again."
-        case .updateFailed:
-            "The API key could not be updated in Keychain. Try again."
-        case .deleteFailed:
-            "The API key could not be deleted from Keychain. Try again."
+        case let .readFailed(status):
+            "The API key could not be read from Keychain (OSStatus \(status))."
+        case let .saveFailed(status):
+            "The API key could not be saved to Keychain (OSStatus \(status))."
+        case let .updateFailed(status):
+            "The API key could not be updated in Keychain (OSStatus \(status))."
+        case let .deleteFailed(status):
+            "The API key could not be deleted from Keychain (OSStatus \(status))."
         }
     }
 }
@@ -179,6 +180,11 @@ final class ProviderSession: ProviderSessionManaging {
     }
 
     func configure(mode: CredentialMode, apiKey: String?) throws {
+        let previousMode = self.mode
+        let previousCredentials = credentials
+        let previousOpen = isOpen
+        let previousError = initializationError
+        let previousRemembered = hasRememberedAPIKey
         clear()
         self.mode = mode
         do {
@@ -186,8 +192,11 @@ final class ProviderSession: ProviderSessionManaging {
             isOpen = true
             initializationError = nil
         } catch {
-            isOpen = false
-            initializationError = error
+            self.mode = previousMode
+            credentials = previousCredentials
+            isOpen = previousOpen
+            initializationError = previousError
+            hasRememberedAPIKey = previousRemembered
             throw error
         }
     }

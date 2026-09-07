@@ -38,6 +38,18 @@ private final class TestKeychainBackend: KeychainBackend, @unchecked Sendable {
 
 final class KeychainStoreTests: XCTestCase {
     @MainActor
+    func testFailedRememberDoesNotDiscardWorkingSessionKey() throws {
+        let backend = TestKeychainBackend()
+        let session = ProviderSession(mode: .thisSessionOnly, keychainStore: KeychainStore(backend: backend))
+        try session.configure(mode: .thisSessionOnly, apiKey: "invalid-session-fixture")
+        backend.addStatus = errSecMissingEntitlement
+        XCTAssertThrowsError(try session.configure(mode: .rememberOnThisMac, apiKey: "invalid-replacement-fixture"))
+        XCTAssertEqual(session.mode, .thisSessionOnly)
+        XCTAssertEqual(try session.credentialsForRequest().apiKey, "invalid-session-fixture")
+        XCTAssertFalse(session.hasRememberedAPIKey)
+    }
+
+    @MainActor
     func testProviderSessionReadsKeychainOnlyForRememberedMode() throws {
         let backend = TestKeychainBackend()
         backend.storedData = Data("remembered-key".utf8)

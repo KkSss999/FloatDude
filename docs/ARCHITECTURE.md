@@ -39,6 +39,16 @@ There is no model-to-tool execution loop, autonomous planning, chat history, clo
 
 ## Concurrency
 
+For the ad-hoc signed v0.1 macOS build, Remember on This Mac uses the system
+file-based login keychain with default application access controls. It does not
+opt into iCloud synchronization and never writes plaintext preferences. This is
+not the Data Protection keychain's ThisDeviceOnly guarantee: login-keychain
+backup/migration behavior remains controlled by macOS. Data Protection keychain
+requires a future correctly provisioned signing configuration. Do not silently
+fall back to plaintext or allow-all access lists. A failed save preserves the
+previous working in-memory credential. Real persistence is checked separately
+with Scripts/keychain-validation.swift using synthetic values and a unique service.
+
 - UI and AppKit lifecycle code runs on `MainActor`.
 - Network streaming and context capture must not block the main thread.
 - Cancellation from `Esc`, panel dismissal, and a second shortcut must stop the active request and discard late stream events.
