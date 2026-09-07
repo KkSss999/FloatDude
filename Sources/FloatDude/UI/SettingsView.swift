@@ -133,7 +133,7 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .padding()
-        .frame(minWidth: 500)
+        .frame(minWidth: 500, minHeight: 460)
         .navigationTitle("FloatDude Settings")
         .onChange(of: credentialMode) { _, newMode in
             if newMode == .noAuthentication {
@@ -279,9 +279,14 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
             defer: false
         )
         window.title = "FloatDude Settings"
-        window.contentViewController = NSHostingController(rootView: view)
+        let hostingController = NSHostingController(rootView: view)
+        // The grouped Form is scrollable and has no useful intrinsic window
+        // height. Let AppKit own the window size instead of fitting to the Form.
+        hostingController.sizingOptions = []
+        window.contentViewController = hostingController
         window.isReleasedWhenClosed = false
-        window.setFrameAutosaveName("FloatDudeSettingsWindow")
+        window.contentMinSize = NSSize(width: 520, height: 480)
+        window.setContentSize(NSSize(width: 560, height: 620))
         window.center()
         super.init(window: window)
         window.delegate = self
@@ -295,6 +300,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
     func present() {
         NSApp.activate(ignoringOtherApps: true)
         showWindow(nil)
+        window?.contentView?.layoutSubtreeIfNeeded()
         window?.makeKeyAndOrderFront(nil)
     }
 

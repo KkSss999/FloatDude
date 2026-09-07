@@ -118,6 +118,10 @@ final class PanelLifecycleTests: XCTestCase {
         XCTAssertTrue(controller.window?.isVisible == true)
         XCTAssertTrue(controller.window?.canBecomeKey == true)
         XCTAssertEqual(controller.window?.title, "FloatDude Settings")
+        XCTAssertNotNil(controller.window?.contentViewController)
+        XCTAssertGreaterThanOrEqual(controller.window?.contentMinSize.height ?? 0, 480)
+        XCTAssertGreaterThanOrEqual(controller.window?.contentView?.bounds.height ?? 0, 480)
+        XCTAssertGreaterThanOrEqual(controller.window?.contentView?.bounds.width ?? 0, 520)
         controller.close()
     }
 }

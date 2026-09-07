@@ -4,6 +4,23 @@ import XCTest
 
 @MainActor
 final class TaskCoordinatorTests: XCTestCase {
+    func testSelectedContextAndAskInstructionRemainSeparateThroughCompletion() async throws {
+        let box = RequestBox()
+        let coordinator = makeCoordinator(
+            context: CapturedContext(text: "Hello FloatDude", source: .accessibilitySelection, applicationName: "TextEdit"),
+            requestBox: box
+        )
+        coordinator.beginInvocation()
+        await waitUntil { coordinator.session.phase == .contextCaptured }
+        coordinator.submit(action: .ask, userPrompt: "翻译成中文")
+        await waitUntil { coordinator.session.phase == .completed }
+        XCTAssertEqual(box.request?.action, .ask)
+        XCTAssertEqual(box.request?.context?.text, "Hello FloatDude")
+        XCTAssertEqual(box.request?.userPrompt, "翻译成中文")
+        XCTAssertEqual(coordinator.session.phase, .completed)
+        XCTAssertEqual(coordinator.session.response, "first answer")
+    }
+
     func testSuccessfulSingleTurnFlowStreamsAndCopiesFinalVisibleText() async throws {
         let clipboard = TestClipboard()
         let requestBox = RequestBox()
