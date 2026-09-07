@@ -1,58 +1,123 @@
-# Architecture boundary — v0.1.0
+# Architecture boundary — Agent Engine foundation
 
 ## Principle
 
-FloatDude v0.1.0 is a one-shot action product, not an agent runtime.
+FloatDude is a local-first conversational agent in a compact, persistent macOS panel.
 
 ```text
-Global shortcut
-  → Context capture
-  → Floating panel + action selection
-  → OpenAI-compatible streaming request
-  → Response + copy or dismiss
+Global shortcut / menu-bar action
+  → synchronous selection + capability snapshot
+  → persistent floating panel
+  → last active conversation + live AX-only selection synchronization
+  → active conversation + optional attachments
+  → stable software root + user instructions + history + current turn
+  → provider stream ↔ bounded read/write tool loop
+  → Markdown response + durable conversation archive
 ```
 
-There is no model-to-tool execution loop, autonomous planning, chat history, cloud account, or server in this release.
+The model has no shell, browser, computer-use, process, permission, delete, move,
+message, or arbitrary-path tool. The two native tools are mechanically fixed:
+
+- `read`: extract bounded text from a file the user explicitly attached to this conversation.
+- `write`: create a UTF-8 `.md` or `.txt` artifact in FloatDude's managed Exports directory.
 
 ## Ownership
 
-| Area | Primary technology | Responsibility |
-| --- | --- | --- |
-| `App` | AppKit + SwiftUI | accessory lifecycle and menu-bar host |
-| `UI` | SwiftUI, AppKit at the panel seam | views; AppKit owns `NSPanel` behavior |
-| `System` | AppKit, Accessibility, Carbon/EventKit as justified | global hotkey, text capture, pasteboard, cursor positioning |
-| `AI` | `URLSession` | OpenAI/Anthropic request building, SSE framing, stream decoding, cancellation |
-| `Storage` | UserDefaults + process memory + Keychain | non-secret preferences, ephemeral session key, opt-in remembered key |
-| `Core` | Foundation | action and error domain types |
+| Area | Responsibility |
+| --- | --- |
+| `Agent` | conversation models/archive, stable software root, attachment ingestion and extraction, read/write tool enforcement |
+| `App` | menu-bar lifecycle, active conversation coordination, turn state and panel sizing |
+| `UI` | persistent panel, transcript/session controls, attachment picker, Markdown response, Settings |
+| `System` | Carbon hotkey, Accessibility capture, deterministic placement, AppKit panel, login-item management |
+| `AI` | OpenAI Chat Completions and Anthropic Messages adapters, SSE, tool loop, cache controls, `/models` probe |
+| `Storage` | UserDefaults preferences, JSON conversations, managed attachments/exports, Keychain credentials |
+| `Core` | shared action and error types |
 
-## Required contracts
+## Prompt and cache contract
 
-- Accessibility is best-effort. `ContextCapturing` must fall back in this order: selection, clipboard, direct input.
-- Credential-like content is blocked before it can become context. Clipboard fallback must never preview or transmit an API key, authorization header, private key, or recognized provider token.
-- Credentials are explicit: No Authentication sends no auth header, This Session Only retains a key only for the process lifetime, and Remember on This Mac persists an opt-in device-local key. No API key may appear in `AppSettings`, logs, errors, analytics, or endpoint URLs.
-- A panel dismissal cancels the task and clears task context, not the provider session. Provider credentials clear only on app termination, disconnect, mode change, replacement, or explicit forget.
-- `LLMClient` is provider-independent at the application boundary. v0.1 implements OpenAI Chat Completions SSE and Anthropic Messages SSE.
-- A stream is complete only after its protocol terminal signal (`[DONE]` or `message_stop`); a clean early EOF is an error.
-- Settings clears the clipboard only when its normalized text exactly matches the API key just applied; unrelated clipboard content is never modified.
-- `FloatingPanel` is a SwiftUI content host. An AppKit `NSPanel` controller must own panel level, focus, location, activation, and dismissal.
-- System actions in later releases require explicit user confirmation. Do not add an agent/tool loop to v0.1.
+Request prefix order is stable by construction:
+
+1. provider tool definitions (`read`, `write`);
+2. `SoftwareRootPrompt.text`, identified by a versioned constant;
+3. optional user system instructions from Settings;
+4. ordered conversation history;
+5. the current action, captured context, attachment index, and user message.
+
+The software root is absent from product Settings and cannot be replaced by user
+content. User instructions refine language, tone, and output preferences but cannot
+expand tool authority. Official OpenAI requests use a conversation-stable cache key
+and 24-hour retention preference. Official Anthropic requests place an ephemeral
+cache breakpoint on the stable root block. Compatible endpoints receive the same
+stable prefix without vendor-specific fields they may reject.
+
+## Conversation and privacy contract
+
+- Conversations and explicit attachment metadata persist locally under Application Support.
+- Selected text and clipboard fallback remain ephemeral and are not written into conversation history.
+- The persisted active conversation is reopened by the next shortcut and its UI
+  scrolls to the latest turn. Creating or selecting a conversation carries the
+  current safe selection as ephemeral pending context; it does not persist that
+  text until the user sends a turn.
+- While the panel is open, an `AXObserver` follows the frontmost source
+  application and its focused element. `AXSelectedTextChanged` is delivered
+  immediately when the app supports it; a 300 ms AX-only sampler remains as a
+  fallback for apps that omit selection notifications. Neither path reads the
+  clipboard, so unrelated clipboard changes cannot enter a conversation context.
+- A deselection notification from an observed external process clears pending
+  context and Rewrite eligibility. Focus in FloatDude itself and unproven
+  polling misses do not clear a user's pending text.
+- Feishu enables `AXManualAccessibility` before capture and searches a bounded
+  parent/child neighborhood around the focused AX element, covering Chromium
+  renderers that expose selected text through an `AXWebArea` rather than the
+  focused group.
+- If that direct read still fails, a Feishu-only hotkey fallback snapshots the
+  selected text through Cmd-C, detects a new pasteboard change, and restores the
+  complete prior pasteboard. It is not a background capability and is never used
+  for other applications. This fallback is intentionally **not live selection
+  synchronization**: it captures only the selection that exists when the user
+  invokes FloatDude's shortcut.
+- User prompts and assistant answers persist so subsequent turns receive ordered history.
+- Attachments are copied into a conversation-specific managed directory after type, size, and extraction validation.
+- Deleting a conversation removes its managed attachment copies after explicit UI confirmation.
+- Credentials remain outside conversation files, prompts, errors, logs, and URLs.
+- Remembered credentials load outside the main actor. A code-identity marker prevents an outdated ad-hoc ACL from being queried after rebuilds, and Keychain reads prohibit authentication UI.
+
+## Window contract
+
+- One retained `NSPanel` owns the entire interaction.
+- Clicking another application does not dismiss or cancel it.
+- `hidesOnDeactivate` and `canHide` are false; floating level keeps it above normal windows.
+- It joins all Spaces and eligible full-screen/Stage Manager application sets.
+- Repeated shortcut raises the existing panel without changing a user-moved position.
+- The requested canvas is capped at the iPhone 17 Pro Max HIG size (440 × 956
+  pt) at 1080p and above, then scales proportionally on smaller displays before
+  safe-frame fitting.
+- Screen/Space changes and completed drags constrain the full frame to the display's visible frame.
+- The complete active transcript uses one scroll surface, an explicit jump-to-
+  latest button, and a hover-expandable message map whose ticks are direct scroll
+  targets. Only user turns create map ticks; assistant messages stay readable in
+  the transcript but do not clutter navigation.
+- `Esc`, the close button, application termination, and explicit programmatic dismissal remain close paths.
+
+## Agent loop contract
+
+- A provider turn may request tools, receive results, and continue for at most eight passes.
+- OpenAI streamed `tool_calls` and Anthropic streamed `tool_use` blocks are accumulated before execution.
+- Tool errors return to the model as errors and are never presented as successful content.
+- Stream completion still requires `[DONE]` or `message_stop`; early EOF is an error.
+- Cancellation stops the active provider response and discards late deltas.
+
+## Attachments
+
+Supported input is PDF with extractable text, Markdown, UTF-8 text, Word
+(`.doc`, `.docx`, RTF/RTFD/ODT), XLSX, CSV, and TSV. XLSX extraction reads shared
+strings and worksheet cells from the ZIP/XML container. Scanned PDF OCR, legacy
+binary `.xls`, macros, embedded media, formulas-as-formulas, and workbook rendering
+are outside this foundation; extracted cached values remain available as text.
 
 ## Concurrency
 
-For the ad-hoc signed v0.1 macOS build, Remember on This Mac uses the system
-file-based login keychain with default application access controls. It does not
-opt into iCloud synchronization and never writes plaintext preferences. This is
-not the Data Protection keychain's ThisDeviceOnly guarantee: login-keychain
-backup/migration behavior remains controlled by macOS. Data Protection keychain
-requires a future correctly provisioned signing configuration. Do not silently
-fall back to plaintext or allow-all access lists. A failed save preserves the
-previous working in-memory credential. Real persistence is checked separately
-with Scripts/keychain-validation.swift using synthetic values and a unique service.
-
-- UI and AppKit lifecycle code runs on `MainActor`.
-- Network streaming and context capture must not block the main thread.
-- Cancellation from `Esc`, panel dismissal, and a second shortcut must stop the active request and discard late stream events.
-
-## Dependency rule
-
-Dependency direction is `App/UI → System/AI/Storage → Core`. `Core` imports no UI, AppKit, network, or storage concerns.
+- UI, Settings, conversation mutation, and AppKit lifecycle run on `MainActor`.
+- Accessibility capture is short and synchronous inside the hot-key event so source focus cannot race; the later live sampler is AX-only and ignored during streaming.
+- Attachment copy/extraction runs outside the main actor and publishes results to the active conversation.
+- Network streaming and tool passes use structured tasks with cancellation propagation.

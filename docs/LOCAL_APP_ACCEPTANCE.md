@@ -7,8 +7,9 @@ script uses the same FloatingPanel views, but is not the installed product.
 - Bundle identifier: `com.kks999.FloatDude`; version: 0.1.0 (1).
 - Release build succeeded; strict code-signature verification succeeded.
 - Installed executable SHA-256 matches the Release build:
-  `37650adb5a0db5d76a391d7f12cd84417c58322321bc6f501b22bfeb120097de`.
-- SwiftPM: 74 tests passed, zero failures.
+  `2a1215b923556fb1c792d5a95907d778475753a32d145a2cfeb485b79e949b18`.
+- SwiftPM: 108 tests passed, zero failures. The Release build was compiled and
+  installed through the single-copy installer; later interactive acceptance is user-owned.
 
 Verified against the installed application through native UI:
 
@@ -30,24 +31,25 @@ indicate a missing application bundle. The menu now also offers Ask FloatDude.
   WindowServer bounds from (1574, 1067) to (1664, 1127), retaining 400×252 size.
 - Full native diffusion and denser neutral backing replace the transmission
   mask after real-work-window feedback about interfering background text.
+- Disabled the rectangular `NSPanel` shadow that was visible outside the
+  rounded glass surface. Native UI inspection of the installed Release app
+  confirms the square outer outline is gone while the rounded surface shadow remains.
 - OS verified as macOS 27.0 (26A5421a). The permission page on this host is
   “设备控制和数据访问” (Device Control and Data Access).
 - TCC logs showed a stale `~/Applications/FloatDude.app` lookup and mismatching
   old/new ad-hoc code requirements. No valid certificate-based signing identity
   was available on this Mac.
 - Unregistered the development build paths and force-registered `/Applications/FloatDude.app`.
-- With explicit user approval, reset only `Accessibility` for
-  `com.kks999.FloatDude`, then added the installed app through System Settings.
-- TCC retained its stale path lookup despite the scoped reset. A compatibility
-  symlink at `~/Applications/FloatDude.app` now points to `/Applications/FloatDude.app`;
-  it is not another executable copy. Keep that link while this host has the stale
-  cached reference. The system list now displays FloatDude with its switch on.
-- The running app stopped reporting missing Accessibility trust. Physical
-  hotkey/selection acceptance is tracked separately from the permission switch.
+- A prior build was added through System Settings after a FloatDude-only TCC
+  reset. The newest ad-hoc build has a different code requirement and currently
+  reports that Accessibility access is unavailable; it must be re-added before
+  physical hotkey/selection acceptance.
+- The former `~/Applications/FloatDude.app` compatibility link was removed at
+  the user's request so no alternate FloatDude path remains.
 
-Do not replace this installed binary after authorization without accounting for
-ad-hoc signature changes. A later rebuild may require authorizing the new build;
-the compatibility link repairs the path lookup, not signing continuity.
+Run `bash Scripts/install-local-app.sh` for local replacement. A later ad-hoc
+rebuild may still require authorizing the newly signed binary because code-hash
+identity cannot remain stable without a certificate-backed signing identity.
 
 Still not verified: live model streaming and final-answer copy, macOS 14/15
 material fallback, or system Reduce Transparency/Increase Contrast toggles.
@@ -70,3 +72,52 @@ No provider credentials or other applications' permissions were changed.
   writable state and two-action non-writable state. Automated Option-Space
   injection does not faithfully reproduce a physical key event on this host,
   so physical-hotkey acceptance remains a separate check.
+
+## Agent Engine foundation
+
+- Switching focus to Finder left the installed panel visible and accessible;
+  click-away no longer closes or cancels it.
+- The native header conversation menu displayed New Conversation and the active
+  session. Repeated presentation preserves a user-moved frame in tests.
+- The installed panel opened its native multi-file importer and successfully
+  imported `README.md` as a managed Markdown attachment. The UI showed its chip
+  and completion status; the acceptance copy was then removed through the UI.
+- Managed originals, extracted text caches, conversation JSON, and write-tool
+  outputs are forced to owner-only `0600` permissions. Existing archives are
+  tightened when loaded.
+- OpenAI and Anthropic streamed tool-loop fixtures both completed a tool call,
+  consumed a native result, sent the provider-specific tool-result shape, and
+  continued to a final answer.
+- Settings contains a bounded user system-prompt editor, `/models` test action,
+  and `SMAppService.mainApp` launch-at-login control. Network validation uses
+  synthetic URLProtocol evidence; no user credential was transmitted during acceptance.
+- The protected software root and tool schemas form a stable prefix of more than
+  1K tokens. Official providers receive their supported cache controls; compatible
+  providers receive no vendor-only cache extensions.
+- Remembered Keychain loading is off the main actor. A code-identity marker avoids
+  querying an old ACL after rebuilds, and the query itself forbids authentication UI.
+  Xcode test-host startup is isolated from the user's login Keychain.
+- `Scripts/install-local-app.sh` built and staged the Release app, replaced the
+  installed copy with rollback protection, deleted seven build-path copies plus
+  the former home Applications link, and unregistered their Launch Services records.
+- Filesystem and Launch Services inspection now return only
+  `/Applications/FloatDude.app`.
+- The installed build includes the 440 × 956 pt iPhone 17 Pro Max responsive
+  canvas policy, active-conversation restoration with AX-only live selection
+  synchronization, a jump-to-latest control, and hover-expandable message map.
+- The message map records only user turns. The current build also follows
+  process-scoped `AXSelectedTextChanged`/focus notifications with an AX-only
+  polling fallback, and persists the Settings English/Simplified Chinese choice.
+- Streaming, completed, cancelled, and failed turns render in the same transcript
+  surface as conversation history. The fixed title strip remains outside the
+  scroll view so its drag target is reachable in every scroll position.
+- Feishu selection capture enables Electron's `AXManualAccessibility` attribute
+  for its known bundle, searches a bounded focused-node neighborhood, and clears
+  the pending context when an observed external app reports deselection.
+- If Feishu still exposes no AX selection, the user-invoked hotkey takes a
+  one-shot Cmd-C snapshot only for Feishu, reads the resulting text, and restores
+  every prior pasteboard representation before displaying context.
+
+Final system permission recovery is a host operation after each ad-hoc binary
+replacement. Re-adding the current installed hash remains the only local
+acceptance step outside the built application.

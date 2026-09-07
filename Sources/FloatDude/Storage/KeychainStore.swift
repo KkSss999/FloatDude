@@ -1,4 +1,5 @@
 import Foundation
+import LocalAuthentication
 import Security
 
 struct ProviderCredentials: Sendable, Equatable {
@@ -45,18 +46,14 @@ protocol KeychainBackend: Sendable {
 
 struct SecurityKeychainBackend: KeychainBackend {
     func read(service: String, account: String) -> KeychainReadResult {
-        var query = itemQuery(service: service, account: account)
-        query.merge([
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-        ]) { _, new in new }
+        let query = Self.readQuery(service: service, account: account)
         var item: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &item)
         return KeychainReadResult(status: status, data: item as? Data)
     }
 
     func add(data: Data, service: String, account: String) -> OSStatus {
-        var attributes = itemQuery(service: service, account: account)
+        var attributes = Self.itemQuery(service: service, account: account)
         attributes.merge([
             kSecValueData as String: data,
         ]) { _, new in new }
@@ -64,7 +61,7 @@ struct SecurityKeychainBackend: KeychainBackend {
     }
 
     func update(data: Data, service: String, account: String) -> OSStatus {
-        let query = itemQuery(service: service, account: account)
+        let query = Self.itemQuery(service: service, account: account)
         let attributes: [String: Any] = [
             kSecValueData as String: data,
         ]
@@ -72,11 +69,26 @@ struct SecurityKeychainBackend: KeychainBackend {
     }
 
     func delete(service: String, account: String) -> OSStatus {
-        let query = itemQuery(service: service, account: account)
+        let query = Self.itemQuery(service: service, account: account)
         return SecItemDelete(query as CFDictionary)
     }
 
-    private func itemQuery(service: String, account: String) -> [String: Any] {
+    static func readQuery(service: String, account: String) -> [String: Any] {
+        var query = itemQuery(service: service, account: account)
+        let context = LAContext()
+        context.interactionNotAllowed = true
+        query.merge([
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            // A rebuilt/ad-hoc identity may no longer satisfy the item's ACL.
+            // Never block a menu-bar app behind an invisible Keychain prompt;
+            // fail fast and let Settings explicitly replace the credential.
+            kSecUseAuthenticationContext as String: context,
+        ]) { _, new in new }
+        return query
+    }
+
+    private static func itemQuery(service: String, account: String) -> [String: Any] {
         [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -97,6 +109,7 @@ enum KeychainStoreError: LocalizedError, Sendable, Equatable {
     case saveFailed(OSStatus)
     case updateFailed(OSStatus)
     case deleteFailed(OSStatus)
+    case identityChanged
 
     var errorDescription: String? {
         switch self {
@@ -112,7 +125,78 @@ enum KeychainStoreError: LocalizedError, Sendable, Equatable {
             "The API key could not be updated in Keychain (OSStatus \(status))."
         case let .deleteFailed(status):
             "The API key could not be deleted from Keychain (OSStatus \(status))."
+        case .identityChanged:
+            "This build has a different code identity. Apply the remembered API key again in Settings."
         }
+    }
+}
+
+protocol KeychainIdentityMarking: Sendable {
+    func matchesCurrentIdentity() -> Bool
+    func markCurrentIdentity() throws
+    func clear() throws
+}
+
+struct VolatileKeychainIdentityMarker: KeychainIdentityMarking {
+    func matchesCurrentIdentity() -> Bool { true }
+    func markCurrentIdentity() throws {}
+    func clear() throws {}
+}
+
+struct FileKeychainIdentityMarker: KeychainIdentityMarking {
+    let fileURL: URL
+
+    init(fileURL: URL? = nil) {
+        let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        self.fileURL = fileURL
+            ?? root.appendingPathComponent("FloatDude", isDirectory: true)
+                .appendingPathComponent("keychain-identity.txt")
+    }
+
+    func matchesCurrentIdentity() -> Bool {
+        guard let stored = try? String(contentsOf: fileURL, encoding: .utf8),
+              let current = Self.currentIdentity()
+        else { return false }
+        return stored == current
+    }
+
+    func markCurrentIdentity() throws {
+        guard let identity = Self.currentIdentity() else {
+            throw KeychainStoreError.identityChanged
+        }
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data(identity.utf8).write(to: fileURL, options: .atomic)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: fileURL.path
+        )
+    }
+
+    func clear() throws {
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            try FileManager.default.removeItem(at: fileURL)
+        }
+    }
+
+    private static func currentIdentity() -> String? {
+        var code: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(Bundle.main.bundleURL as CFURL, [], &code) == errSecSuccess,
+              let code
+        else { return nil }
+        var information: CFDictionary?
+        guard SecCodeCopySigningInformation(code, [], &information) == errSecSuccess,
+              let values = information as? [String: Any],
+              let identifier = values[kSecCodeInfoIdentifier as String] as? String
+        else { return nil }
+        if let team = values[kSecCodeInfoTeamIdentifier as String] as? String, !team.isEmpty {
+            return "team:\(team)|identifier:\(identifier)"
+        }
+        guard let unique = values[kSecCodeInfoUnique as String] as? Data else { return nil }
+        return "adhoc:\(identifier)|cdhash:\(unique.base64EncodedString())"
     }
 }
 
@@ -153,16 +237,21 @@ final class ProviderSession: ProviderSessionManaging {
 
     init(
         mode: CredentialMode,
-        keychainStore: any KeychainStoring
+        keychainStore: any KeychainStoring,
+        loadRememberedImmediately: Bool = true
     ) {
         self.mode = mode
         self.keychainStore = keychainStore
         self.credentials = ProviderCredentials(mode: mode)
         self.initializationError = nil
-        do {
-            try reopen()
-        } catch {
-            initializationError = error
+        if mode == .rememberOnThisMac && !loadRememberedImmediately {
+            isOpen = false
+        } else {
+            do {
+                try reopen()
+            } catch {
+                initializationError = error
+            }
         }
     }
 
@@ -220,6 +309,16 @@ final class ProviderSession: ProviderSessionManaging {
         initializationError = nil
     }
 
+    func acceptRememberedAPIKey(_ key: String) {
+        guard mode == .rememberOnThisMac else { return }
+        let loaded = ProviderCredentials(mode: .rememberOnThisMac, apiKey: key)
+        guard loaded.hasAPIKey else { return }
+        credentials = loaded
+        hasRememberedAPIKey = true
+        isOpen = true
+        initializationError = nil
+    }
+
     func deleteRememberedAPIKey() throws {
         try keychainStore.deleteAPIKey()
         hasRememberedAPIKey = false
@@ -258,18 +357,27 @@ struct KeychainStore: KeychainStoring, Sendable {
     private let backend: any KeychainBackend
     private let service: String
     private let account: String
+    private let identityMarker: any KeychainIdentityMarking
 
     init(
         backend: any KeychainBackend = SecurityKeychainBackend(),
         service: String = "com.kks999.FloatDude",
-        account: String = "api-key"
+        account: String = "api-key",
+        identityMarker: (any KeychainIdentityMarking)? = nil
     ) {
         self.backend = backend
         self.service = service
         self.account = account
+        self.identityMarker = identityMarker
+            ?? (backend is SecurityKeychainBackend
+                ? FileKeychainIdentityMarker()
+                : VolatileKeychainIdentityMarker())
     }
 
     func apiKey() throws -> String? {
+        guard identityMarker.matchesCurrentIdentity() else {
+            throw KeychainStoreError.identityChanged
+        }
         let result = backend.read(service: service, account: account)
         switch result.status {
         case errSecSuccess:
@@ -288,6 +396,7 @@ struct KeychainStore: KeychainStoring, Sendable {
         let data = try validatedData(for: key)
         let status = backend.add(data: data, service: service, account: account)
         if status == errSecSuccess {
+            try identityMarker.markCurrentIdentity()
             return
         }
         if status == errSecDuplicateItem {
@@ -306,6 +415,7 @@ struct KeychainStore: KeychainStoring, Sendable {
         guard status == errSecSuccess || status == errSecItemNotFound else {
             throw KeychainStoreError.deleteFailed(status)
         }
+        try identityMarker.clear()
     }
 
     private func update(data: Data) throws {
@@ -313,6 +423,7 @@ struct KeychainStore: KeychainStoring, Sendable {
         guard status == errSecSuccess else {
             throw KeychainStoreError.updateFailed(status)
         }
+        try identityMarker.markCurrentIdentity()
     }
 
     private func validatedData(for key: String) throws -> Data {

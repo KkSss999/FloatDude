@@ -24,6 +24,26 @@ final class ContextCaptureTests: XCTestCase {
         XCTAssertEqual(pasteboard.readCount, 0)
     }
 
+    func testLiveSelectionForObservedProcessUsesAccessibilityOnly() {
+        let pasteboard = FakePasteboard(text: "clipboard must not be read")
+        let capture = SelectionCapture(
+            accessibility: FakeAccessibilityProvider(selectedText: "live selection"),
+            pasteboard: pasteboard
+        )
+
+        let result = capture.captureLiveSelection(from: 42)
+
+        XCTAssertEqual(
+            result,
+            .captured(CapturedContext(
+                text: "live selection",
+                source: .accessibilitySelection,
+                applicationName: nil
+            ))
+        )
+        XCTAssertEqual(pasteboard.readCount, 0)
+    }
+
     func testAccessibilitySelectionCarriesBoundsForPanelAvoidance() async {
         let rect = CGRect(x: 100, y: 200, width: 180, height: 24)
         let capture = SelectionCapture(
@@ -121,6 +141,30 @@ final class ContextCaptureTests: XCTestCase {
                 )
             )
         )
+    }
+
+    func testFeishuCopyFallbackCapturesNewSelectionBeforeExistingClipboard() {
+        let pasteboard = FakePasteboard(text: "old clipboard")
+        let fallback = FakeSelectionCopyFallback(text: "Feishu selected text")
+        let capture = SelectionCapture(
+            accessibility: FakeAccessibilityProvider(mode: .failure),
+            pasteboard: pasteboard,
+            selectionCopyFallback: fallback
+        )
+
+        let result = capture.captureContext()
+
+        XCTAssertEqual(
+            result,
+            .captured(CapturedContext(
+                text: "Feishu selected text",
+                source: .selectionCopy,
+                applicationName: nil,
+                guidance: "Captured from Feishu when you invoked the shortcut. Live selection updates are unavailable in this renderer."
+            ))
+        )
+        XCTAssertEqual(fallback.callCount, 1)
+        XCTAssertEqual(pasteboard.readCount, 0)
     }
 
     func testEmptyClipboardFallsBackToDirectInput() async {
@@ -335,6 +379,20 @@ private struct FakePasteboard: PasteboardProviding {
 
 private final class ReadCountBox: @unchecked Sendable {
     var value = 0
+}
+
+private final class FakeSelectionCopyFallback: SelectionCopyFallback, @unchecked Sendable {
+    let text: String?
+    private(set) var callCount = 0
+
+    init(text: String?) {
+        self.text = text
+    }
+
+    func captureSelection(bundleIdentifier: String?, processID: pid_t) -> String? {
+        callCount += 1
+        return text
+    }
 }
 
 private enum FakeError: Error {

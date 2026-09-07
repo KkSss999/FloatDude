@@ -10,8 +10,9 @@ enum TaskSessionPhase: String, Codable, Equatable, Sendable {
     case failed
 }
 
-/// The complete in-memory state of one invocation. It deliberately has no
-/// persistence or history representation: a new invocation starts from idle.
+/// Ephemeral execution state for the current turn. Durable conversation
+/// history lives in AgentConversation and is intentionally separate from
+/// captured selection context and streaming lifecycle details.
 struct TaskSessionSnapshot: Equatable, Sendable {
     var phase: TaskSessionPhase
     var context: CapturedContext?

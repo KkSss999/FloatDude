@@ -34,7 +34,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(SettingsStore(defaults: localDefaults).current.credentialMode, .noAuthentication)
     }
 
-    func testSettingsRoundTripUsesOnlyTheThreeAllowedUserDefaultsValues() throws {
+    func testSettingsRoundTripPersistsOnlyNonSecretPreferences() throws {
         let suiteName = "FloatDude.SettingsStoreTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         defer { defaults.removePersistentDomain(forName: suiteName) }
@@ -44,7 +44,10 @@ final class SettingsStoreTests: XCTestCase {
             baseURL: URL(string: "HTTPS://API.Example.com/v1/"),
             model: "  gpt-test  ",
             hotkeyDescription: "  Option-Space  ",
-            credentialMode: .thisSessionOnly
+            credentialMode: .thisSessionOnly,
+            userSystemPrompt: "  Reply in Chinese.  ",
+            launchAtLogin: true,
+            settingsLanguage: .simplifiedChinese
         )
         store.save(settings)
 
@@ -54,11 +57,17 @@ final class SettingsStoreTests: XCTestCase {
             "floatdude.settings.model",
             "floatdude.settings.shortcutDescriptor",
             "floatdude.settings.credentialMode",
+            "floatdude.settings.userSystemPrompt",
+            "floatdude.settings.launchAtLogin",
+            "floatdude.settings.settingsLanguage",
         ])
         XCTAssertEqual(persisted["floatdude.settings.baseURL"] as? String, "https://api.example.com/v1")
         XCTAssertEqual(persisted["floatdude.settings.model"] as? String, "gpt-test")
         XCTAssertEqual(persisted["floatdude.settings.shortcutDescriptor"] as? String, "Option-Space")
         XCTAssertEqual(persisted["floatdude.settings.credentialMode"] as? String, CredentialMode.thisSessionOnly.rawValue)
+        XCTAssertEqual(persisted["floatdude.settings.userSystemPrompt"] as? String, "Reply in Chinese.")
+        XCTAssertEqual(persisted["floatdude.settings.launchAtLogin"] as? Bool, true)
+        XCTAssertEqual(persisted["floatdude.settings.settingsLanguage"] as? String, SettingsLanguage.simplifiedChinese.rawValue)
         XCTAssertFalse(persisted.values.contains { String(describing: $0).contains("secret") })
 
         let reloaded = SettingsStore(defaults: defaults)
@@ -66,8 +75,51 @@ final class SettingsStoreTests: XCTestCase {
             baseURL: URL(string: "https://api.example.com/v1"),
             model: "gpt-test",
             hotkeyDescription: "Option-Space",
-            credentialMode: .thisSessionOnly
+            credentialMode: .thisSessionOnly,
+            userSystemPrompt: "Reply in Chinese.",
+            launchAtLogin: true,
+            settingsLanguage: .simplifiedChinese
         ))
+    }
+
+    func testSettingsLanguageFallsBackSafelyAndPersistsIndependentlyOfCredentials() throws {
+        let suiteName = "FloatDude.SettingsStoreTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set("unsupported", forKey: "floatdude.settings.settingsLanguage")
+        let store = SettingsStore(defaults: defaults)
+        XCTAssertEqual(store.current.settingsLanguage, AppSettings.default.settingsLanguage)
+
+        var updated = store.current
+        updated.settingsLanguage = .english
+        store.save(updated)
+
+        XCTAssertEqual(SettingsStore(defaults: defaults).current.settingsLanguage, .english)
+    }
+
+    func testCustomSystemPromptHasBoundedPersistedSize() {
+        let oversized = AppSettings(
+            baseURL: URL(string: "https://provider.example"),
+            model: "model",
+            hotkeyDescription: "Option-Space",
+            userSystemPrompt: String(repeating: "x", count: 12_001)
+        )
+        XCTAssertThrowsError(try SettingsStore.validated(oversized)) { error in
+            XCTAssertEqual(error as? SettingsValidationError, .systemPromptTooLong)
+        }
+    }
+
+    func testCustomSystemPromptRejectsCredentialsBeforeUserDefaults() {
+        let settings = AppSettings(
+            baseURL: URL(string: "https://provider.example"),
+            model: "model",
+            hotkeyDescription: "Option-Space",
+            userSystemPrompt: "Use sk-" + String(repeating: "a", count: 24)
+        )
+        XCTAssertThrowsError(try SettingsStore.validated(settings)) { error in
+            XCTAssertEqual(error as? SettingsValidationError, .systemPromptContainsCredential)
+        }
     }
 
     func testEndpointNormalizationAndValidation() throws {

@@ -1,4 +1,5 @@
 import Foundation
+import LocalAuthentication
 import Security
 import XCTest
 @testable import FloatDude
@@ -36,7 +37,61 @@ private final class TestKeychainBackend: KeychainBackend, @unchecked Sendable {
     }
 }
 
+private final class TestIdentityMarker: KeychainIdentityMarking, @unchecked Sendable {
+    var matches = true
+    var markCount = 0
+    var clearCount = 0
+
+    func matchesCurrentIdentity() -> Bool { matches }
+    func markCurrentIdentity() throws { markCount += 1; matches = true }
+    func clear() throws { clearCount += 1 }
+}
+
 final class KeychainStoreTests: XCTestCase {
+    func testProductionReadQueryNeverPromptsDuringBackgroundStartup() {
+        let query = SecurityKeychainBackend.readQuery(service: "service", account: "account")
+
+        XCTAssertEqual(
+            (query[kSecUseAuthenticationContext as String] as? LAContext)?.interactionNotAllowed,
+            true
+        )
+        XCTAssertEqual(query[kSecReturnData as String] as? Bool, true)
+    }
+
+    func testIdentityMismatchFailsBeforeTouchingKeychainBackend() {
+        let backend = TestKeychainBackend()
+        backend.storedData = Data("old-key".utf8)
+        let marker = TestIdentityMarker()
+        marker.matches = false
+        let store = KeychainStore(
+            backend: backend,
+            service: "identity",
+            account: "key",
+            identityMarker: marker
+        )
+
+        XCTAssertThrowsError(try store.apiKey()) { error in
+            XCTAssertEqual(error as? KeychainStoreError, .identityChanged)
+        }
+        XCTAssertEqual(backend.operations, [])
+    }
+
+    func testSuccessfulRememberAndDeleteUpdateIdentityMarker() throws {
+        let backend = TestKeychainBackend()
+        let marker = TestIdentityMarker()
+        let store = KeychainStore(
+            backend: backend,
+            service: "identity",
+            account: "key",
+            identityMarker: marker
+        )
+
+        try store.saveAPIKey("new-key")
+        try store.deleteAPIKey()
+
+        XCTAssertEqual(marker.markCount, 1)
+        XCTAssertEqual(marker.clearCount, 1)
+    }
     @MainActor
     func testFailedRememberDoesNotDiscardWorkingSessionKey() throws {
         let backend = TestKeychainBackend()
@@ -79,6 +134,26 @@ final class KeychainStoreTests: XCTestCase {
         _ = try remembered.credentialsForRequest()
         _ = try remembered.credentialsForRequest()
         XCTAssertEqual(backend.operations, ["read"])
+    }
+
+    @MainActor
+    func testRememberedCredentialCanLoadLazilyWithoutBlockingStartup() throws {
+        let backend = TestKeychainBackend()
+        backend.storedData = Data("remembered-key".utf8)
+        let store = KeychainStore(backend: backend, service: "lazy", account: "key")
+
+        let session = ProviderSession(
+            mode: .rememberOnThisMac,
+            keychainStore: store,
+            loadRememberedImmediately: false
+        )
+
+        XCTAssertEqual(backend.operations, [])
+        XCTAssertThrowsError(try session.credentialsForRequest()) { error in
+            XCTAssertEqual(error as? ProviderSessionError, .sessionClosed)
+        }
+        session.acceptRememberedAPIKey("remembered-key")
+        XCTAssertEqual(try session.credentialsForRequest().apiKey, "remembered-key")
     }
 
     @MainActor

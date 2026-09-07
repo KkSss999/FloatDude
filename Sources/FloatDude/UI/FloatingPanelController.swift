@@ -5,7 +5,7 @@ import SwiftUI
 final class FloatingPanelController: NSObject, NSWindowDelegate {
     typealias Hook = PanelLifecycle.Hook
 
-    nonisolated static let defaultPanelSize = CGSize(width: 420, height: 260)
+    nonisolated static let defaultPanelSize = CGSize(width: 440, height: 260)
 
     private let positioner: any WindowPositioning
     private var lifecycle: PanelLifecycle!
@@ -69,8 +69,12 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
         self.content = content
         requestedPanelSize = panelSize
         self.selectionRect = selectionRect
+        let wasPresented = lifecycle.isPresented
         _ = lifecycle.present()
-        showPhysicalPanel(activateForInput: activateForInput, reposition: reposition)
+        showPhysicalPanel(
+            activateForInput: activateForInput,
+            reposition: reposition && !wasPresented
+        )
     }
 
     func update(panelSize: CGSize, avoiding selectionRect: CGRect? = nil) {
@@ -85,7 +89,7 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
     /// configured content without creating another NSPanel.
     func handleShortcut() {
         if lifecycle.isPresented {
-            _ = lifecycle.handle(.shortcut)
+            ensureVisible()
         } else if content != nil {
             _ = lifecycle.handle(.shortcut)
             showPhysicalPanel(reposition: true)
@@ -101,13 +105,15 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        guard lifecycle.isPresented else { return }
-        _ = lifecycle.handle(.clickAway)
+        ensureVisible()
     }
 
     func windowDidResignMain(_ notification: Notification) {
-        guard lifecycle.isPresented else { return }
-        _ = lifecycle.handle(.clickAway)
+        ensureVisible()
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        constrainPanelToVisibleScreen()
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
@@ -169,13 +175,23 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.hidesOnDeactivate = false
+        panel.canHide = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        // AppKit draws an NSWindow shadow from the panel's rectangular frame,
+        // even though the SwiftUI surface is rounded and inset. That leaves a
+        // visible square rim around transparent corners. The surface owns its
+        // rounded shadow, so keep the native window shadow disabled.
+        panel.hasShadow = false
         panel.isMovable = true
         panel.isMovableByWindowBackground = true
         panel.becomesKeyOnlyIfNeeded = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        panel.collectionBehavior = [
+            .canJoinAllSpaces,
+            .canJoinAllApplications,
+            .fullScreenAuxiliary,
+            .ignoresCycle,
+        ]
         panel.isReleasedWhenClosed = false
         panel.delegate = self
         panel.onCancelOperation = { [weak self] in
@@ -189,6 +205,40 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
         panel?.orderOut(nil)
         panel?.contentView = nil
         content = nil
+    }
+
+    fileprivate func ensureVisible() {
+        guard lifecycle.isPresented, let panel else { return }
+        constrainPanelToVisibleScreen()
+        panel.orderFrontRegardless()
+    }
+
+    private func constrainPanelToVisibleScreen() {
+        guard let panel else { return }
+        let screen = panel.screen ?? NSScreen.screens.max { lhs, rhs in
+            let left = lhs.frame.intersection(panel.frame)
+            let right = rhs.frame.intersection(panel.frame)
+            let leftArea = left.isNull ? 0 : left.width * left.height
+            let rightArea = right.isNull ? 0 : right.width * right.height
+            return leftArea < rightArea
+        }
+        guard let screen else { return }
+        let safe = screen.visibleFrame.insetBy(dx: 8, dy: 8)
+        let fittedSize = PanelSizePolicy.fittedPanelSize(
+            requestedPanelSize,
+            displayFrame: screen.frame,
+            visibleFrame: screen.visibleFrame,
+            edgeInset: 8
+        )
+        var frame = panel.frame
+        let top = frame.maxY
+        frame.size = fittedSize
+        frame.origin.y = top - fittedSize.height
+        frame.origin.x = min(max(frame.minX, safe.minX), safe.maxX - frame.width)
+        frame.origin.y = min(max(frame.minY, safe.minY), safe.maxY - frame.height)
+        if frame != panel.frame {
+            panel.setFrame(frame, display: true)
+        }
     }
 
     fileprivate func handleTermination() {
@@ -207,6 +257,18 @@ private final class TerminationObserver: NSObject, @unchecked Sendable {
             name: NSApplication.willTerminateNotification,
             object: NSApplication.shared
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(visibilityEnvironmentChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(visibilityEnvironmentChanged),
+            name: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil
+        )
     }
 
     @objc private func applicationWillTerminate() {
@@ -215,8 +277,15 @@ private final class TerminationObserver: NSObject, @unchecked Sendable {
         }
     }
 
+    @objc private func visibilityEnvironmentChanged() {
+        Task { @MainActor [weak owner] in
+            owner?.ensureVisible()
+        }
+    }
+
     deinit {
         NotificationCenter.default.removeObserver(self)
+        NSWorkspace.shared.notificationCenter.removeObserver(self)
     }
 }
 
