@@ -300,9 +300,13 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
     private func requestBody(for request: LLMRequest) throws -> Data {
         let context = request.context?.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let prompt = request.userPrompt?.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard ![context, prompt]
-            .compactMap({ $0 })
-            .contains(where: SensitiveTextDetector.containsCredential)
+        let sensitiveContext = request.context.map {
+            $0.source == .clipboard
+                ? SensitiveTextDetector.containsSensitiveClipboardValue($0.text)
+                : SensitiveTextDetector.containsCredential(in: $0.text)
+        } ?? false
+        guard !sensitiveContext,
+              !SensitiveTextDetector.containsCredential(in: prompt ?? "")
         else {
             throw LLMClientError.sensitiveContent
         }

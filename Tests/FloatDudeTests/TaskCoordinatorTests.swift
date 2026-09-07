@@ -90,7 +90,7 @@ final class TaskCoordinatorTests: XCTestCase {
         let requestBox = RequestBox()
         let coordinator = makeCoordinator(
             context: CapturedContext(
-                text: "sk-" + String(repeating: "f", count: 24),
+                text: String(repeating: "f", count: 32),
                 source: .clipboard,
                 applicationName: nil
             ),
@@ -103,7 +103,7 @@ final class TaskCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(coordinator.session.phase, .failed)
         XCTAssertNil(requestBox.request)
-        XCTAssertFalse(coordinator.session.errorMessage?.contains("sk-") == true)
+        XCTAssertFalse(coordinator.session.errorMessage?.contains(String(repeating: "f", count: 32)) == true)
     }
 
     private func makeCoordinator(

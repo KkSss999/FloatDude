@@ -193,7 +193,7 @@ final class ContextCaptureTests: XCTestCase {
     }
 
     func testSensitiveClipboardIsBlockedWithoutReflectingItsValue() async {
-        let sensitiveValue = "sk-" + String(repeating: "a", count: 24)
+        let sensitiveValue = String(repeating: "a", count: 32)
         let capture = SelectionCapture(
             accessibility: FakeAccessibilityProvider(mode: .denied),
             pasteboard: FakePasteboard(text: sensitiveValue)

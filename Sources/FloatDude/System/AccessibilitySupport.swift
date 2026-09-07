@@ -1,4 +1,4 @@
-import ApplicationServices
+@preconcurrency import ApplicationServices
 import AppKit
 import Foundation
 
@@ -21,6 +21,26 @@ extension AccessibilityProviding {
 }
 
 struct SystemAccessibilityProvider: AccessibilityProviding {
+    @discardableResult
+    static func requestAccessIfNeeded() -> Bool {
+        if AXIsProcessTrusted() {
+            return true
+        }
+        let options = [
+            kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true,
+        ] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
+    }
+
+    static func openAccessibilitySettings() {
+        guard let url = URL(
+            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        ) else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
     var isTrusted: Bool {
         AXIsProcessTrusted()
     }

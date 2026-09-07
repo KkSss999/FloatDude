@@ -133,9 +133,13 @@ final class TaskCoordinator: ObservableObject {
             return
         }
 
-        guard ![context?.text, normalizedPrompt]
-            .compactMap({ $0 })
-            .contains(where: SensitiveTextDetector.containsCredential)
+        let sensitiveContext = context.map {
+            $0.source == .clipboard
+                ? SensitiveTextDetector.containsSensitiveClipboardValue($0.text)
+                : SensitiveTextDetector.containsCredential(in: $0.text)
+        } ?? false
+        guard !sensitiveContext,
+              !SensitiveTextDetector.containsCredential(in: normalizedPrompt)
         else {
             session.apply(.failed("This content appears to contain a credential and was not sent."))
             return

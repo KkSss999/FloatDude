@@ -38,8 +38,7 @@ struct TaskPanelView: View {
                 onOpenSettings: { coordinator.openSettings() }
             ),
             onOpenAccessibilitySettings: {
-                guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
-                NSWorkspace.shared.open(url)
+                SystemAccessibilityProvider.openAccessibilitySettings()
             }
         )
         .onChange(of: coordinator.panelState) { _, newState in

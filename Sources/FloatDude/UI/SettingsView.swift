@@ -17,6 +17,7 @@ struct SettingsView: View {
     @State private var shortcut: String
     @State private var hasAPIKey: Bool
     @State private var hasRememberedAPIKey: Bool
+    @State private var accessibilityGranted: Bool
     @State private var statusMessage: String?
     @State private var statusIsError = false
 
@@ -37,6 +38,7 @@ struct SettingsView: View {
         _shortcut = State(initialValue: settings.hotkeyDescription)
         _hasAPIKey = State(initialValue: settings.credentialMode != .noAuthentication && providerSession.hasAPIKey)
         _hasRememberedAPIKey = State(initialValue: providerSession.hasRememberedAPIKey)
+        _accessibilityGranted = State(initialValue: SystemAccessibilityProvider().isTrusted)
     }
 
     var body: some View {
@@ -99,6 +101,26 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("Context Access") {
+                Label(
+                    accessibilityGranted ? "Accessibility access granted" : "Accessibility access required for selected text",
+                    systemImage: accessibilityGranted ? "checkmark.shield" : "exclamationmark.shield"
+                )
+                .foregroundStyle(accessibilityGranted ? Color.secondary : Color.orange)
+
+                HStack {
+                    Button("Request Access") {
+                        accessibilityGranted = SystemAccessibilityProvider.requestAccessIfNeeded()
+                    }
+                    Button("Open Accessibility Settings") {
+                        SystemAccessibilityProvider.openAccessibilitySettings()
+                    }
+                    Button("Refresh") {
+                        accessibilityGranted = SystemAccessibilityProvider().isTrusted
+                    }
+                }
+            }
+
             Section {
                 Button("Save Settings", action: saveSettings)
                     .keyboardShortcut(.defaultAction)
@@ -120,6 +142,9 @@ struct SettingsView: View {
             } else if newMode != providerSession.mode {
                 hasAPIKey = false
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            accessibilityGranted = SystemAccessibilityProvider().isTrusted
         }
     }
 

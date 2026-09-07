@@ -21,7 +21,8 @@
 | Drag panel background | Panel moves freely; response expansion preserves the dragged top anchor |
 | Missing/invalid credential | Human-readable error exposes a working Settings button; legacy default DeepSeek/NoAuth state migrates to Session Only |
 | Open Settings before first hotkey | Menu-bar Settings opens a key settings window without requiring a prior panel invocation |
-| Clipboard contains a credential | FloatDude blocks it before preview/request and offers selection or direct-input recovery |
+| Clipboard contains a credential or standalone high-entropy token | FloatDude blocks it before preview/request and offers selection or direct-input recovery |
+| Accessibility unavailable | Settings shows live permission status and user-triggered Request Access/Open System Settings actions; the panel explains any clipboard fallback |
 | Apply credentials from clipboard | Matching API-key clipboard content is cleared; unrelated clipboard content is preserved |
 | Copy response | Pasteboard receives exactly the final visible response |
 | Invalid endpoint/key | Human-readable error; key and Authorization header never rendered or logged |

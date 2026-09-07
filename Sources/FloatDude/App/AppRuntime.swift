@@ -12,12 +12,12 @@ final class AppRuntime: ObservableObject {
     let contextCapturer: SelectionCapture
     let hotkeyManager: CarbonGlobalHotkey
     let panelController: FloatingPanelController
-    let settingsWindowController: SettingsWindowController
     let coordinator: TaskCoordinator
     @Published private(set) var startupError: String?
 
     private var started = false
     private var lastResponseVisibility = false
+    private var settingsWindowController: SettingsWindowController?
 
     init() {
         let settingsStore = SettingsStore()
@@ -74,22 +74,15 @@ final class AppRuntime: ObservableObject {
                 coordinator?.cancelActiveRequest()
             }
         )
-        let settingsWindowController = SettingsWindowController(
-            settingsStore: settingsStore,
-            providerSession: providerSession,
-            hotkeyManager: hotkeyManager,
-            clipboardManager: clipboardManager
-        )
-
         self.settingsStore = settingsStore
         self.providerSession = providerSession
         self.clipboardManager = clipboardManager
         self.contextCapturer = contextCapturer
         self.hotkeyManager = hotkeyManager
         self.panelController = panelController
-        self.settingsWindowController = settingsWindowController
         self.coordinator = coordinator
         self.startupError = nil
+        self.settingsWindowController = nil
 
         coordinator.onPresentPanel = { [weak self] in
             self?.presentPanel()
@@ -118,12 +111,24 @@ final class AppRuntime: ObservableObject {
         coordinator.cancelActiveRequest()
         providerSession.clear()
         panelController.dismiss()
-        settingsWindowController.close()
+        settingsWindowController?.close()
         hotkeyManager.unregister()
     }
 
     func openSettings() {
-        settingsWindowController.present()
+        let controller: SettingsWindowController
+        if let settingsWindowController {
+            controller = settingsWindowController
+        } else {
+            controller = SettingsWindowController(
+                settingsStore: settingsStore,
+                providerSession: providerSession,
+                hotkeyManager: hotkeyManager,
+                clipboardManager: clipboardManager
+            )
+            settingsWindowController = controller
+        }
+        controller.present()
     }
 
     private func presentPanel() {

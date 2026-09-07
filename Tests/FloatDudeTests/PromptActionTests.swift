@@ -24,6 +24,9 @@ final class PromptActionTests: XCTestCase {
         XCTAssertTrue(SensitiveTextDetector.containsCredential(
             in: "Authorization: Bearer " + String(repeating: "d", count: 24)
         ))
+        let rawHexToken = String(repeating: "e", count: 32)
+        XCTAssertFalse(SensitiveTextDetector.containsCredential(in: rawHexToken))
+        XCTAssertTrue(SensitiveTextDetector.containsSensitiveClipboardValue(rawHexToken))
         XCTAssertFalse(SensitiveTextDetector.containsCredential(in: "Explain tokio::spawn clearly."))
     }
 }

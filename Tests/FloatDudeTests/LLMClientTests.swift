@@ -157,7 +157,7 @@ final class LLMClientTests: XCTestCase {
             FakeTransport.response(chunks: [Data("data: [DONE]\n\n".utf8)])
         }
         let client = try makeClient(transport: transport)
-        let sensitiveValue = "sk-" + String(repeating: "e", count: 24)
+        let sensitiveValue = String(repeating: "e", count: 32)
 
         do {
             for try await _ in client.stream(LLMRequest(

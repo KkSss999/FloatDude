@@ -117,7 +117,7 @@ struct SelectionCapture: ContextCapturing {
         }
 
         if let clipboardText = readClipboardText() {
-            guard !SensitiveTextDetector.containsCredential(in: clipboardText) else {
+            guard !SensitiveTextDetector.containsSensitiveClipboardValue(clipboardText) else {
                 return .unavailable(reason: .sensitiveClipboardBlocked)
             }
             if let result = makeResult(
