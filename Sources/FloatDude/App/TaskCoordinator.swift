@@ -155,7 +155,6 @@ final class TaskCoordinator: ObservableObject {
             }
         } catch {
             session.apply(.failed(Self.safeMessage(for: error)))
-            onOpenSettings?()
             return
         }
 
@@ -216,9 +215,7 @@ final class TaskCoordinator: ObservableObject {
     }
 
     func cancelAndDismiss() {
-        activeInvocationID = nil
-        cancelTasks()
-        session.apply(.cancelled)
+        cancelActiveRequest()
         onDismissPanel?()
     }
 
@@ -227,9 +224,10 @@ final class TaskCoordinator: ObservableObject {
     func cancelActiveRequest() {
         activeInvocationID = nil
         cancelTasks()
-        if session.phase != .cancelled {
-            session.apply(.cancelled)
-        }
+        session = .idle
+        session.apply(.cancelled)
+        userPrompt = ""
+        contextGuidance = nil
     }
 
     func panelDidDismiss() {
@@ -237,10 +235,7 @@ final class TaskCoordinator: ObservableObject {
     }
 
     func dismissWithoutCancellation() {
-        activeInvocationID = nil
-        cancelTasks()
-        session.apply(.cancelled)
-        onDismissPanel?()
+        cancelAndDismiss()
     }
 
     private var normalizedPrompt: String {
@@ -310,7 +305,6 @@ final class TaskCoordinator: ObservableObject {
 
     private func failConfiguration() {
         session.apply(.failed(FloatDudeError.missingConfiguration.localizedDescription))
-        onOpenSettings?()
     }
 
     private func cancelTasks() {

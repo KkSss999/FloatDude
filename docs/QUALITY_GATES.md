@@ -11,6 +11,18 @@
 
 ## Manual macOS acceptance
 
+Use one final app build and path for permission acceptance. Ad-hoc code signing
+uses a code-hash requirement and does not guarantee Accessibility trust survives
+rebuilds. An enabled entry in System Settings alone is not proof that the running
+binary is trusted. Record the in-app permission status and verify actual selected
+text capture. A certificate-backed development identity is required for stable
+identity across changing builds; CI/CD remains deferred to v0.5.0.
+
+The task panel must not activate the entire app or raise Settings. Missing
+configuration stays in the task error UI until the user explicitly opens Settings.
+Opening Settings dismisses the task panel; closing macOS System Settings must not
+close FloatDude Settings. Dismissal clears task content but preserves session keys.
+
 | Scenario | Expected result |
 | --- | --- |
 | Shortcut in Safari, Xcode, Terminal, and TextEdit | One panel appears at the selection anchor, or the pointer fallback when bounds are unavailable; no duplicate panels |

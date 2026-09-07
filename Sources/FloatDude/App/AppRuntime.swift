@@ -116,6 +116,7 @@ final class AppRuntime: ObservableObject {
     }
 
     func openSettings() {
+        coordinator.cancelAndDismiss()
         let controller: SettingsWindowController
         if let settingsWindowController {
             controller = settingsWindowController
@@ -132,6 +133,7 @@ final class AppRuntime: ObservableObject {
     }
 
     private func presentPanel() {
+        settingsWindowController?.window?.orderOut(nil)
         let view = TaskPanelView(coordinator: coordinator) { [weak self] state in
             self?.resizePanel(for: state)
         }

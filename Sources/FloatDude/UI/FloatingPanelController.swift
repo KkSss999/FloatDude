@@ -148,9 +148,8 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
         }
 
         panel.orderFrontRegardless()
-        if activateForInput {
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        // A nonactivating panel can receive keyboard focus without activating
+        // the whole app (which would also raise its Settings window).
         panel.makeKeyAndOrderFront(nil)
     }
 
@@ -182,6 +181,8 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
 
     private func hidePhysicalPanel() {
         panel?.orderOut(nil)
+        panel?.contentView = nil
+        content = nil
     }
 
     fileprivate func handleTermination() {

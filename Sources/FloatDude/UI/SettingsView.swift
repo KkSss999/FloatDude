@@ -103,10 +103,17 @@ struct SettingsView: View {
 
             Section("Context Access") {
                 Label(
-                    accessibilityGranted ? "Accessibility access granted" : "Accessibility access required for selected text",
+                    accessibilityGranted ? "Accessibility access granted" : "This running build is not trusted by Accessibility",
                     systemImage: accessibilityGranted ? "checkmark.shield" : "exclamationmark.shield"
                 )
                 .foregroundStyle(accessibilityGranted ? Color.secondary : Color.orange)
+                if !accessibilityGranted {
+                    Text("If FloatDude is already enabled in System Settings, its authorization may belong to another build. Local ad-hoc signatures change when rebuilt. Authorize the current app after the final build.")
+                        .font(.caption)
+                    Text(Bundle.main.bundleURL.path)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                }
 
                 HStack {
                     Button("Request Access") {
@@ -285,6 +292,7 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         hostingController.sizingOptions = []
         window.contentViewController = hostingController
         window.isReleasedWhenClosed = false
+        window.hidesOnDeactivate = false
         window.contentMinSize = NSSize(width: 520, height: 480)
         window.setContentSize(NSSize(width: 560, height: 620))
         window.center()

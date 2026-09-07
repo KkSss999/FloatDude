@@ -43,7 +43,7 @@ final class TaskCoordinatorTests: XCTestCase {
         XCTAssertEqual(clipboard.lastWrite, "first answer")
     }
 
-    func testMissingConfigurationOpensSettingsWithoutStartingStream() async {
+    func testMissingConfigurationOnlyOpensSettingsOnExplicitAction() async {
         let settings = TestSettingsStore(settings: AppSettings(
             baseURL: nil,
             model: "",
@@ -58,6 +58,8 @@ final class TaskCoordinatorTests: XCTestCase {
         coordinator.submit(action: .explain, userPrompt: "")
 
         XCTAssertEqual(coordinator.session.phase, .failed)
+        XCTAssertFalse(didOpenSettings)
+        coordinator.openSettings()
         XCTAssertTrue(didOpenSettings)
     }
 
@@ -82,6 +84,8 @@ final class TaskCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(coordinator.session.phase, .cancelled)
         XCTAssertEqual(coordinator.session.response, "")
+        XCTAssertNil(coordinator.session.context)
+        XCTAssertEqual(coordinator.userPrompt, "")
         XCTAssertTrue(providerSession.hasAPIKey)
     }
 
