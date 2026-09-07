@@ -29,14 +29,14 @@ struct LocalValidation {
             accessibility: ValidationAccessibility(selectedText: "AX"),
             pasteboard: ValidationPasteboard(text: "clipboard")
         )
-        let result = await capture.captureContext(directInput: "direct")
+        let result = capture.captureContext(directInput: "direct")
         precondition(result == .captured(CapturedContext(text: "AX", source: .accessibilitySelection, applicationName: nil)))
 
         let fallback = SelectionCapture(
             accessibility: ValidationAccessibility(),
             pasteboard: ValidationPasteboard(text: "clipboard")
         )
-        let fallbackResult = await fallback.captureContext(directInput: "direct")
+        let fallbackResult = fallback.captureContext(directInput: "direct")
         precondition(fallbackResult == .captured(CapturedContext(text: "clipboard", source: .clipboard, applicationName: nil)))
     }
 
@@ -127,7 +127,7 @@ private final class ValidationPasteboard: ClipboardManaging, @unchecked Sendable
 }
 
 private struct ValidationContextCapturer: ContextCapturing {
-    func captureContext(directInput: String?) async -> ContextCaptureResult {
+    func captureContext(directInput: String?) -> ContextCaptureResult {
         .captured(CapturedContext(text: "context", source: .clipboard, applicationName: nil))
     }
 }

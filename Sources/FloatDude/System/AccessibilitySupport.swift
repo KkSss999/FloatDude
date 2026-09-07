@@ -12,11 +12,16 @@ protocol AccessibilityProviding: Sendable {
     func focusedElement() throws -> AXUIElement?
     func selectedText(from focusedElement: AXUIElement) throws -> String?
     func selectedTextBounds(from focusedElement: AXUIElement) throws -> CGRect?
+    func canReplaceSelectedText(in focusedElement: AXUIElement) throws -> Bool
 }
 
 extension AccessibilityProviding {
     func selectedTextBounds(from focusedElement: AXUIElement) throws -> CGRect? {
         nil
+    }
+
+    func canReplaceSelectedText(in focusedElement: AXUIElement) throws -> Bool {
+        false
     }
 }
 
@@ -30,6 +35,15 @@ struct SystemAccessibilityProvider: AccessibilityProviding {
             kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true,
         ] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
+    }
+
+    static var settingsPaneName: String {
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
+            ? "Device Control and Data Access" : "Accessibility"
+    }
+
+    static func revealRunningApp() {
+        NSWorkspace.shared.activateFileViewerSelecting([Bundle.main.bundleURL])
     }
 
     static func openAccessibilitySettings() {
@@ -52,20 +66,36 @@ struct SystemAccessibilityProvider: AccessibilityProviding {
 
         let systemWideElement = AXUIElementCreateSystemWide()
         var focusedValue: CFTypeRef?
-        let status = AXUIElementCopyAttributeValue(
+        let systemStatus = AXUIElementCopyAttributeValue(
             systemWideElement,
             kAXFocusedUIElementAttribute as CFString,
             &focusedValue
         )
 
-        guard status == .success, let focusedValue else {
-            return nil
+        if systemStatus == .success,
+           let focusedValue,
+           CFGetTypeID(focusedValue) == AXUIElementGetTypeID() {
+            return unsafeDowncast(focusedValue, to: AXUIElement.self)
         }
 
-        guard CFGetTypeID(focusedValue) == AXUIElementGetTypeID() else {
+        // macOS 27 can return cannotComplete for the system-wide focused
+        // element even after TCC trust is granted. Querying the frontmost AX
+        // application is the supported equivalent and preserves the source
+        // app because capture runs inside the hot-key callback.
+        guard let frontmost = NSWorkspace.shared.frontmostApplication else {
             return nil
         }
-
+        let applicationElement = AXUIElementCreateApplication(frontmost.processIdentifier)
+        focusedValue = nil
+        let applicationStatus = AXUIElementCopyAttributeValue(
+            applicationElement,
+            kAXFocusedUIElementAttribute as CFString,
+            &focusedValue
+        )
+        guard applicationStatus == .success,
+              let focusedValue,
+              CFGetTypeID(focusedValue) == AXUIElementGetTypeID()
+        else { return nil }
         return unsafeDowncast(focusedValue, to: AXUIElement.self)
     }
 
@@ -82,6 +112,16 @@ struct SystemAccessibilityProvider: AccessibilityProviding {
         }
 
         return selectedValue as? String
+    }
+
+    func canReplaceSelectedText(in focusedElement: AXUIElement) throws -> Bool {
+        var settable = DarwinBoolean(false)
+        let status = AXUIElementIsAttributeSettable(
+            focusedElement,
+            kAXSelectedTextAttribute as CFString,
+            &settable
+        )
+        return status == .success && settable.boolValue
     }
 
     func selectedTextBounds(from focusedElement: AXUIElement) throws -> CGRect? {
@@ -127,7 +167,10 @@ struct SystemAccessibilityProvider: AccessibilityProviding {
     }
 
     private func appKitDesktopRect(fromAccessibilityRect rect: CGRect) -> CGRect {
-        guard let desktopTop = NSScreen.screens.map(\.frame.maxY).max() else {
+        // AX coordinates are measured downward from the main display's top;
+        // using the tallest display makes selections jump when screens are
+        // arranged above or below the main display.
+        guard let desktopTop = NSScreen.screens.first?.frame.maxY else {
             return rect
         }
         return CGRect(

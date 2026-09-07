@@ -30,6 +30,9 @@ private struct MenuBarView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             Divider()
+            Button("Ask FloatDude…") {
+                runtime.coordinator.beginInvocation()
+            }
             Button("Settings…") {
                 runtime.openSettings()
             }

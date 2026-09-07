@@ -123,7 +123,10 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
         guard let content else { return }
 
         let panel = self.panel ?? makePanel()
-        let fittedSize = positioner.fittedPanelSize(for: requestedPanelSize)
+        let fittedSize = positioner.fittedPanelSize(
+            for: requestedPanelSize,
+            avoiding: selectionRect
+        )
         if reposition || panel.contentView == nil {
             panel.contentView = NSHostingView(rootView: content)
         }
@@ -144,7 +147,10 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
             let constrainedFrame = panel.screen.map {
                 panel.constrainFrameRect(topAnchoredFrame, to: $0)
             } ?? topAnchoredFrame
-            panel.setFrame(constrainedFrame, display: true, animate: true)
+            panel.setFrame(
+                constrainedFrame, display: true,
+                animate: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            )
         }
 
         panel.orderFrontRegardless()

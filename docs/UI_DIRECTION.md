@@ -46,15 +46,16 @@ The visual references suggest an upper bubble and a response sheet. The implemen
 
 - Permit a width range of 336–456 pt for small displays and accessibility text sizes.
 - When Accessibility provides selection bounds, anchor the panel to that selection: below first, then above or beside it without covering the text. Fall back to the pointer only when selection geometry is unavailable. Keep the panel fully on the active display.
+- Use the valid selection's display and a fixed below/above/right/left candidate order. Reject invalid or off-screen bounds before pointer fallback.
 - Truncate previews after two lines; preserve the complete captured text for the model request, not for visible UI.
 - Settings belong in the menu-bar item or a dedicated Settings scene, never in the task panel.
 
 ## Interaction hierarchy
 
 1. Selected text or a direct prompt is the context.
-2. With captured text, tapping `Explain`, `Translate`, or `Rewrite` starts that action immediately.
+2. With captured text, tapping `Explain` or `Translate` starts that action immediately. Show `Rewrite` only when `AXSelectedText` is settable on the captured element.
 3. `Ask anything…` always dispatches the Ask action, not whichever quick action was last selected.
-4. On first output token, the same panel grows downward and begins rendering the response.
+4. On first output token, the same panel grows downward and renders native Markdown.
 5. `Copy` copies only final visible response text. `Esc`, click-away, or a repeated shortcut cancels active streaming and dismisses the panel.
 
 ## Motion and restraint
@@ -79,3 +80,42 @@ The visual references suggest an upper bubble and a response sheet. The implemen
 - With Reduce Transparency or Increase Contrast enabled, controls and body copy remain unambiguous and legible.
 - At 200% accessibility text sizing, the panel remains within the active display and response content scrolls rather than clipping.
 - The screen recording demo must clearly show: shortcut → selection preview → action → one-panel expansion → Copy/Esc.
+
+## Native glass refinement (2026-09-07)
+
+The task surface uses one native optical background layer. After testing against
+real work windows, readability takes priority over transmitting sharp background
+text: macOS 26+ uses full `.regular` Liquid Glass, without a transmission mask.
+A neutral backing (42% light / 52% dark) limits background interference; Increase
+Contrast strengthens it further. Foreground text and controls are never faded.
+The rim light and restrained shadow preserve separation from the desktop.
+macOS 14/15 use AppKit behind-window vibrancy with a directional rim. This
+requires Xcode 26+ to build; the deployment target remains macOS 14.
+
+Inside the shell, the selection is a two-line quotation with a source caption,
+the ask field is the main inset, and quick actions share one quiet row. Active
+actions use coral plus a checkmark (replacing the earlier underline). Responses
+sit directly on the surface below a hairline separator, without a second card
+or repeated status headings. The close control is an actual accessible button. The title strip has an
+explicit AppKit drag region, separate from close, selection and input controls;
+its mouse events move the same NSPanel without routing through the ScrollView.
+An outer scroll region keeps recovery guidance and controls reachable within
+the bounded panel; long answers also scroll within their response region.
+
+Reduce Transparency switches to opaque system colors. Increase Contrast adds a
+stronger outer boundary and input edges. Native window resizing now observes
+Reduce Motion as well as the SwiftUI transitions. These paths still require
+real macOS accessibility-setting acceptance; a screenshot is not a contrast
+measurement or a full accessibility audit.
+
+Run `./Scripts/run-glass-preview.sh` for isolated native sample windows (light,
+dark, direct input, and an increased-contrast appearance). Its background picker
+switches between daylight, a dark desktop, and dense text so transmission and
+reading-area interference can be checked on the same native windows. The preview uses
+synthetic content, does not start AppRuntime or access clipboard/credentials,
+and makes no network requests. Close it with Quit from its application menu or
+stop the script. The background is a review fixture, not a shipped app screen.
+
+Technical inspiration: [Appllama/liquid-glass-screens](https://github.com/Appllama/liquid-glass-screens),
+particularly the distinction between background optics and rim light. No shader,
+artwork, animation, or source code from that repository is included.

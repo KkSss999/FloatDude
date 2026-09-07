@@ -28,7 +28,9 @@ It is not a chat client squeezed into a floating window. FloatDude uses macOS-na
 - Falls back safely to the clipboard or direct input.
 - Places one movable, always-on-top panel beside the selection.
 - Provides **Explain**, **Translate**, **Rewrite**, and **Ask Anything** actions.
+- Shows **Rewrite** only when Accessibility confirms the selection can be replaced.
 - Streams responses from OpenAI Chat Completions or Anthropic Messages compatible APIs.
+- Renders Markdown headings, emphasis, links, lists, quotes, code, rules, and tables.
 - Copies the result in one click and disappears with `Esc` or a click outside.
 - Follows the current macOS Light or Dark appearance with an adaptive glass interface.
 
@@ -46,7 +48,7 @@ There is no third-party runtime dependency, FloatDude account, synchronization s
 ## Requirements
 
 - macOS 14 Sonoma or newer
-- Xcode 16 or newer
+- Xcode 26 or newer
 - An OpenAI Chat Completions or Anthropic Messages compatible model endpoint
 
 FloatDude currently ships as a development build. A signed, notarized DMG is not available yet.
@@ -134,3 +136,17 @@ It is both an open-source macOS utility and an exploration of how AI can feel na
 FloatDude is licensed under the [Apache License 2.0](LICENSE). See [NOTICE](NOTICE) for attribution.
 
 The license does not grant rights to use the FloatDude name or visual identity except as required to describe the origin of the project and reproduce its attribution notices.
+
+## Local application bundle
+
+Build a Release `.app` that runs independently of Xcode:
+
+```sh
+xcodebuild -project FloatDude.xcodeproj -scheme FloatDude -configuration Release -destination 'platform=macOS' -derivedDataPath .build/product build
+```
+
+The bundle is `.build/product/Build/Products/Release/FloatDude.app`. Quit any older
+copy before copying it into `/Applications`, then open it from Finder. FloatDude
+lives in the menu bar and has no Dock icon. Use **Ask FloatDude…** in its menu-bar
+panel, or open the app again, to show the task surface. Local builds are ad-hoc
+signed; this is not a notarized distribution.

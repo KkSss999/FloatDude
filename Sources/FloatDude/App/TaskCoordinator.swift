@@ -48,7 +48,6 @@ final class TaskCoordinator: ObservableObject {
     private let settingsStore: any SettingsStoring
     private let providerSession: any ProviderSessionManaging
     private let clipboardManager: any ClipboardManaging
-    private var captureTask: Task<Void, Never>?
     private var streamTask: Task<Void, Never>?
     private var activeInvocationID: UUID?
 
@@ -69,7 +68,6 @@ final class TaskCoordinator: ObservableObject {
     }
 
     deinit {
-        captureTask?.cancel()
         streamTask?.cancel()
     }
 
@@ -84,14 +82,11 @@ final class TaskCoordinator: ObservableObject {
         contextGuidance = nil
         metrics.beginInvocation()
 
-        // Capture runs before the panel is activated so the focused AX element
-        // still belongs to the user's foreground application.
-        captureTask = Task { [weak self] in
-            guard let self else { return }
-            let result = await contextCapturer.captureContext(directInput: nil)
-            guard !Task.isCancelled else { return }
-            self.finishCapture(result, invocationID: invocationID)
-        }
+        // AX reads are intentionally short and synchronous. Finishing them in
+        // this hot-key turn prevents the source app from changing focus or
+        // replacing the selection before capability and bounds are captured.
+        let result = contextCapturer.captureContext(directInput: nil)
+        finishCapture(result, invocationID: invocationID)
     }
 
     func selectAction(_ action: PromptAction) {
@@ -102,6 +97,7 @@ final class TaskCoordinator: ObservableObject {
     }
 
     func runAction(_ action: PromptAction) {
+        guard action != .rewrite || session.context?.canReplaceSelection == true else { return }
         selectAction(action)
         guard session.context != nil else { return }
         submit(action: action, userPrompt: "")
@@ -308,9 +304,7 @@ final class TaskCoordinator: ObservableObject {
     }
 
     private func cancelTasks() {
-        captureTask?.cancel()
         streamTask?.cancel()
-        captureTask = nil
         streamTask = nil
     }
 

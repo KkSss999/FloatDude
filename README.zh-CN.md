@@ -28,7 +28,9 @@ FloatDude 是一款原生 macOS 菜单栏工具，围绕一个克制而完整的
 - 安全回退到剪贴板或直接输入。
 - 在选区附近展示一个可拖拽、始终置顶的浮窗。
 - 提供 **解释**、**翻译**、**改写**和**自由提问**四种操作。
+- 仅当当前辅助功能选区支持直接替换时显示 **改写**。
 - 支持 OpenAI Chat Completions 与 Anthropic Messages 兼容接口的流式响应。
+- 原生呈现 Markdown 标题、强调、链接、列表、引用、代码块、分隔线和表格。
 - 一键复制结果，按 `Esc` 或点击浮窗外部即可离开。
 - 使用自适应玻璃界面，自动跟随 macOS 浅色或深色外观。
 
@@ -46,7 +48,7 @@ FloatDude 使用 Swift 编写，因为它最重要的能力本就属于 Mac：
 ## 环境要求
 
 - macOS 14 Sonoma 或更高版本
-- Xcode 16 或更高版本
+- Xcode 26 或更高版本
 - 一个兼容 OpenAI Chat Completions 或 Anthropic Messages 的模型接口
 
 FloatDude 目前以开发构建形式提供，尚未发布经过签名和公证的 DMG 安装包。
@@ -69,6 +71,19 @@ open FloatDude.xcodeproj
 4. 在其他应用中选中文字，然后按下 `⌥ Space`。
 
 全新配置默认使用 DeepSeek 的 Anthropic 兼容接口、`deepseek-v4-flash` 模型和 **This Session Only** 凭据模式。所有服务商字段均可替换为其他兼容服务。
+
+## 本地应用包
+
+可直接生成用于日常试用的 Release `.app`，无需保持 Xcode 运行：
+
+```sh
+xcodebuild -project FloatDude.xcodeproj -scheme FloatDude -configuration Release -destination 'platform=macOS' -derivedDataPath .build/product build
+```
+
+应用包位于 `.build/product/Build/Products/Release/FloatDude.app`。退出旧版后，
+将它复制到 `/Applications`，然后从访达打开。应用常驻菜单栏，不显示 Dock 图标；
+菜单栏的 **Ask FloatDude…** 或再次打开应用都可以呼出任务浮窗。
+本地构建使用 ad-hoc 签名，尚非签名公证发行版。
 
 ## 凭据与隐私
 

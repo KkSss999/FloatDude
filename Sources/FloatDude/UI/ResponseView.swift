@@ -32,7 +32,7 @@ struct ResponseView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             header
             content
             footer
@@ -41,15 +41,11 @@ struct ResponseView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Label("Response", systemImage: state.headerSymbolName)
-                .font(.headline)
-            Spacer(minLength: 8)
-            Text(state.statusTitle)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .accessibilityLabel("Status: \(state.statusTitle)")
-        }
+        Rectangle()
+            .fill(Color.primary.opacity(0.10))
+            .frame(height: 0.5)
+            .padding(.vertical, 3)
+            .accessibilityHidden(true)
     }
 
     @ViewBuilder
@@ -66,7 +62,8 @@ struct ResponseView: View {
                 .overlay(alignment: .topTrailing) {
                     ProgressView()
                         .controlSize(.small)
-                        .padding(12)
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 1)
                         .accessibilityLabel("Generating")
                 }
         case .completed:
@@ -90,19 +87,12 @@ struct ResponseView: View {
 
     private func responseText(_ text: String) -> some View {
         ScrollView(.vertical) {
-            Text(text.isEmpty ? " " : text)
-                .font(.body)
-                .textSelection(.enabled)
+            MarkdownResponse(text: text.isEmpty ? " " : text)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(14)
+                .padding(.vertical, 4)
+                .padding(.horizontal, 1)
         }
-        .frame(maxHeight: 150)
-        .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.14), lineWidth: 1)
-        }
+        .frame(maxHeight: 140)
         .accessibilityLabel("Response text")
     }
 
@@ -110,12 +100,7 @@ struct ResponseView: View {
         HStack(alignment: .top, spacing: 10, content: content)
             .font(.body)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .background(Color.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.14), lineWidth: 1)
-            }
+            .padding(.vertical, 10)
     }
 
     @ViewBuilder
@@ -128,7 +113,7 @@ struct ResponseView: View {
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
                 Button("Cancel", role: .cancel) { onCancel?() }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(GlassActionStyle())
             }
         case .completed:
             HStack {
@@ -137,7 +122,7 @@ struct ResponseView: View {
                 } label: {
                     Label("Copy", systemImage: "doc.on.doc")
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(GlassActionStyle())
                 .disabled(visibleResponse.isEmpty)
                 .accessibilityHint("Copy the response to the clipboard")
                 Spacer(minLength: 8)
@@ -150,7 +135,7 @@ struct ResponseView: View {
                     .disabled(onRetry == nil)
                 if case .error = state {
                     Button("Settings…", action: { onOpenSettings?() })
-                        .buttonStyle(.bordered)
+                        .buttonStyle(GlassActionStyle())
                         .disabled(onOpenSettings == nil)
                 }
                 Spacer(minLength: 8)
@@ -165,11 +150,306 @@ struct ResponseView: View {
         Button {
             onCancel?()
         } label: {
-            Label("Press Esc to close", systemImage: "escape")
+            Text("Esc to close")
                 .font(.caption)
         }
         .buttonStyle(.borderless)
         .keyboardShortcut(.escape)
         .foregroundStyle(.secondary)
+    }
+}
+
+// MARK: - Markdown
+
+enum MarkdownBlock: Equatable, Sendable {
+    case heading(level: Int, text: String)
+    case paragraph(String)
+    case unorderedList([String])
+    case orderedList([String])
+    case quote(String)
+    case code(language: String?, text: String)
+    case table(headers: [String], rows: [[String]])
+    case divider
+}
+
+enum MarkdownDocument {
+    static func parse(_ source: String) -> [MarkdownBlock] {
+        let lines = source.components(separatedBy: .newlines)
+        var blocks: [MarkdownBlock] = []
+        var paragraph: [String] = []
+        var index = 0
+
+        func flushParagraph() {
+            guard !paragraph.isEmpty else { return }
+            blocks.append(.paragraph(paragraph.joined(separator: "\n")))
+            paragraph.removeAll(keepingCapacity: true)
+        }
+
+        while index < lines.count {
+            let line = lines[index]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            if trimmed.hasPrefix("```") {
+                flushParagraph()
+                let language = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+                index += 1
+                var code: [String] = []
+                while index < lines.count,
+                      !lines[index].trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                    code.append(lines[index])
+                    index += 1
+                }
+                if index < lines.count { index += 1 }
+                blocks.append(.code(language: language.isEmpty ? nil : language,
+                                    text: code.joined(separator: "\n")))
+                continue
+            }
+
+            if index + 1 < lines.count,
+               trimmed.contains("|"),
+               isTableSeparator(lines[index + 1]) {
+                flushParagraph()
+                let headers = tableCells(line)
+                index += 2
+                var rows: [[String]] = []
+                while index < lines.count {
+                    let row = lines[index].trimmingCharacters(in: .whitespaces)
+                    guard !row.isEmpty, row.contains("|") else { break }
+                    rows.append(tableCells(lines[index]))
+                    index += 1
+                }
+                blocks.append(.table(headers: headers, rows: rows))
+                continue
+            }
+
+            if let heading = heading(line) {
+                flushParagraph()
+                blocks.append(heading)
+                index += 1
+                continue
+            }
+
+            if trimmed == "---" || trimmed == "***" || trimmed == "___" {
+                flushParagraph()
+                blocks.append(.divider)
+                index += 1
+                continue
+            }
+
+            if unorderedItem(line) != nil {
+                flushParagraph()
+                var items: [String] = []
+                while index < lines.count, let item = unorderedItem(lines[index]) {
+                    items.append(item)
+                    index += 1
+                }
+                blocks.append(.unorderedList(items))
+                continue
+            }
+
+            if orderedItem(line) != nil {
+                flushParagraph()
+                var items: [String] = []
+                while index < lines.count, let item = orderedItem(lines[index]) {
+                    items.append(item)
+                    index += 1
+                }
+                blocks.append(.orderedList(items))
+                continue
+            }
+
+            if trimmed.hasPrefix(">") {
+                flushParagraph()
+                var quote: [String] = []
+                while index < lines.count {
+                    let candidate = lines[index].trimmingCharacters(in: .whitespaces)
+                    guard candidate.hasPrefix(">") else { break }
+                    quote.append(String(candidate.dropFirst()).trimmingCharacters(in: .whitespaces))
+                    index += 1
+                }
+                blocks.append(.quote(quote.joined(separator: "\n")))
+                continue
+            }
+
+            if trimmed.isEmpty {
+                flushParagraph()
+            } else {
+                paragraph.append(line)
+            }
+            index += 1
+        }
+
+        flushParagraph()
+        return blocks
+    }
+
+    private static func heading(_ line: String) -> MarkdownBlock? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        let level = trimmed.prefix(while: { $0 == "#" }).count
+        guard (1...6).contains(level),
+              trimmed.dropFirst(level).first == " "
+        else { return nil }
+        return .heading(
+            level: level,
+            text: String(trimmed.dropFirst(level + 1))
+        )
+    }
+
+    private static func unorderedItem(_ line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        for prefix in ["- ", "* ", "+ "] where trimmed.hasPrefix(prefix) {
+            return String(trimmed.dropFirst(2))
+        }
+        return nil
+    }
+
+    private static func orderedItem(_ line: String) -> String? {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        guard let dot = trimmed.firstIndex(of: "."),
+              dot != trimmed.startIndex,
+              trimmed[..<dot].allSatisfy(\.isNumber)
+        else { return nil }
+        let remainder = trimmed[trimmed.index(after: dot)...]
+        guard remainder.first == " " else { return nil }
+        return String(remainder.dropFirst())
+    }
+
+    private static func tableCells(_ line: String) -> [String] {
+        line.trimmingCharacters(in: CharacterSet(charactersIn: " |"))
+            .split(separator: "|", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+    }
+
+    private static func isTableSeparator(_ line: String) -> Bool {
+        let cells = tableCells(line)
+        return !cells.isEmpty && cells.allSatisfy { cell in
+            let normalized = cell.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
+            return normalized.count >= 3 && normalized.allSatisfy { $0 == "-" }
+        }
+    }
+}
+
+private struct MarkdownResponse: View {
+    let blocks: [MarkdownBlock]
+
+    init(text: String) {
+        blocks = MarkdownDocument.parse(text)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                blockView(block)
+            }
+        }
+        .textSelection(.enabled)
+    }
+
+    @ViewBuilder
+    private func blockView(_ block: MarkdownBlock) -> some View {
+        switch block {
+        case let .heading(level, text):
+            Text(inline(text))
+                .font(headingFont(level))
+                .padding(.top, level == 1 ? 2 : 0)
+        case let .paragraph(text):
+            Text(inline(text))
+                .font(.body)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+        case let .unorderedList(items):
+            list(items, ordered: false)
+        case let .orderedList(items):
+            list(items, ordered: true)
+        case let .quote(text):
+            HStack(alignment: .top, spacing: 9) {
+                Capsule().fill(Color.accentColor.opacity(0.55)).frame(width: 2)
+                Text(inline(text))
+                    .font(.body.italic())
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        case let .code(language, text):
+            VStack(alignment: .leading, spacing: 5) {
+                if let language {
+                    Text(language.uppercased())
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .tracking(0.8)
+                        .foregroundStyle(.secondary)
+                }
+                ScrollView(.horizontal) {
+                    Text(text)
+                        .font(.system(size: 12, design: .monospaced))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: true, vertical: false)
+                }
+            }
+            .padding(10)
+            .glassInset(cornerRadius: 10)
+        case let .table(headers, rows):
+            markdownTable(headers: headers, rows: rows)
+        case .divider:
+            Divider().opacity(0.6)
+        }
+    }
+
+    private func list(_ items: [String], ordered: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(ordered ? "\(index + 1)." : "•")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 18, alignment: .trailing)
+                    Text(inline(item))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .font(.body)
+    }
+
+    private func markdownTable(headers: [String], rows: [[String]]) -> some View {
+        let columnCount = max(headers.count, rows.map(\.count).max() ?? 0)
+        return ScrollView(.horizontal) {
+            VStack(alignment: .leading, spacing: 0) {
+                tableRow(headers, count: columnCount, isHeader: true)
+                Divider()
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    tableRow(row, count: columnCount, isHeader: false)
+                    Divider().opacity(0.35)
+                }
+            }
+        }
+        .glassInset(cornerRadius: 10)
+    }
+
+    private func tableRow(_ cells: [String], count: Int, isHeader: Bool) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(0..<count, id: \.self) { index in
+                Text(inline(index < cells.count ? cells[index] : ""))
+                    .font(.system(size: 12, weight: isHeader ? .semibold : .regular))
+                    .frame(width: 140, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 7)
+            }
+        }
+    }
+
+    private func inline(_ source: String) -> AttributedString {
+        (try? AttributedString(
+            markdown: source,
+            options: .init(
+                interpretedSyntax: .inlineOnlyPreservingWhitespace,
+                failurePolicy: .returnPartiallyParsedIfPossible
+            )
+        )) ?? AttributedString(source)
+    }
+
+    private func headingFont(_ level: Int) -> Font {
+        switch level {
+        case 1: .title3.weight(.semibold)
+        case 2: .headline
+        default: .subheadline.weight(.semibold)
+        }
     }
 }

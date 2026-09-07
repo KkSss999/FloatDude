@@ -57,4 +57,48 @@ final class UIStateTests: XCTestCase {
         XCTAssertFalse(model.state.isBusy)
         XCTAssertEqual(model.state.statusTitle, "Error")
     }
+
+    func testMarkdownParserRecognizesAnswerStructure() {
+        let markdown = """
+        # Result
+
+        A **clear** paragraph with [docs](https://example.com).
+
+        - First
+        - Second
+
+        1. One
+        2. Two
+
+        > Keep context.
+
+        ```swift
+        let answer = 42
+        ```
+
+        | Name | Value |
+        | --- | ---: |
+        | Answer | 42 |
+        """
+
+        XCTAssertEqual(
+            MarkdownDocument.parse(markdown),
+            [
+                .heading(level: 1, text: "Result"),
+                .paragraph("A **clear** paragraph with [docs](https://example.com)."),
+                .unorderedList(["First", "Second"]),
+                .orderedList(["One", "Two"]),
+                .quote("Keep context."),
+                .code(language: "swift", text: "let answer = 42"),
+                .table(headers: ["Name", "Value"], rows: [["Answer", "42"]]),
+            ]
+        )
+    }
+
+    func testMarkdownParserPreservesUnclosedStreamingCodeFence() {
+        XCTAssertEqual(
+            MarkdownDocument.parse("```json\n{\"ready\": true}"),
+            [.code(language: "json", text: "{\"ready\": true}")]
+        )
+    }
 }

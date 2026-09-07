@@ -161,7 +161,13 @@ final class AppRuntime: ObservableObject {
         case .loading, .streaming, .completed, .cancelled, .error:
             CGSize(width: 400, height: 420)
         case .idle, .prompting:
-            CGSize(width: 400, height: hasContext ? 236 : 176)
+            // Capture guidance (including its recovery link) is real product
+            // content that is absent from the clean visual preview. Reserve
+            // room so it does not push the ask field or actions below the fold.
+            CGSize(
+                width: 400,
+                height: (hasContext ? 236 : 176) + (coordinator.contextGuidance == nil ? 0 : 76)
+            )
         }
     }
 }
