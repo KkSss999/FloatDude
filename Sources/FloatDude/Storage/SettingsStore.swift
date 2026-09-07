@@ -19,22 +19,54 @@ enum CredentialMode: String, CaseIterable, Codable, Identifiable, Sendable, Equa
     }
 }
 
+/// Display language is deliberately product-scoped for now: provider values,
+/// prompts, and the protected software policy retain their original text.
+/// Settings can switch immediately without changing the rest of the app.
+enum SettingsLanguage: String, CaseIterable, Codable, Identifiable, Sendable, Equatable {
+    case english
+    case simplifiedChinese
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .english: "English"
+        case .simplifiedChinese: "简体中文"
+        }
+    }
+
+    static var systemDefault: SettingsLanguage {
+        Locale.preferredLanguages.first?.lowercased().hasPrefix("zh") == true
+            ? .simplifiedChinese
+            : .english
+    }
+}
+
 struct AppSettings: Sendable, Equatable {
     var baseURL: URL?
     var model: String
     var hotkeyDescription: String
     var credentialMode: CredentialMode
+    var userSystemPrompt: String
+    var launchAtLogin: Bool
+    var settingsLanguage: SettingsLanguage
 
     init(
         baseURL: URL?,
         model: String,
         hotkeyDescription: String,
-        credentialMode: CredentialMode = .noAuthentication
+        credentialMode: CredentialMode = .noAuthentication,
+        userSystemPrompt: String = "",
+        launchAtLogin: Bool = false,
+        settingsLanguage: SettingsLanguage = .systemDefault
     ) {
         self.baseURL = baseURL
         self.model = model
         self.hotkeyDescription = hotkeyDescription
         self.credentialMode = credentialMode
+        self.userSystemPrompt = userSystemPrompt
+        self.launchAtLogin = launchAtLogin
+        self.settingsLanguage = settingsLanguage
     }
 
     /// Compatibility name for callers that refer to the persisted value as a
@@ -47,7 +79,10 @@ struct AppSettings: Sendable, Equatable {
         baseURL: URL(string: "https://api.deepseek.com/anthropic"),
         model: "deepseek-v4-flash",
         hotkeyDescription: "Option-Space",
-        credentialMode: .thisSessionOnly
+        credentialMode: .thisSessionOnly,
+        userSystemPrompt: "",
+        launchAtLogin: false,
+        settingsLanguage: .systemDefault
     )
 }
 
@@ -58,6 +93,8 @@ enum SettingsValidationError: LocalizedError, Sendable, Equatable {
     case endpointContainsQuery
     case emptyModel
     case emptyShortcut
+    case systemPromptTooLong
+    case systemPromptContainsCredential
 
     var errorDescription: String? {
         switch self {
@@ -73,6 +110,10 @@ enum SettingsValidationError: LocalizedError, Sendable, Equatable {
             "Enter a model name."
         case .emptyShortcut:
             "Enter a shortcut descriptor."
+        case .systemPromptTooLong:
+            "Keep the custom system prompt at 12,000 characters or fewer."
+        case .systemPromptContainsCredential:
+            "The custom system prompt appears to contain a credential and was not saved."
         }
     }
 }
@@ -90,6 +131,9 @@ final class SettingsStore: SettingsStoring {
         static let model = "floatdude.settings.model"
         static let shortcutDescriptor = "floatdude.settings.shortcutDescriptor"
         static let credentialMode = "floatdude.settings.credentialMode"
+        static let userSystemPrompt = "floatdude.settings.userSystemPrompt"
+        static let launchAtLogin = "floatdude.settings.launchAtLogin"
+        static let settingsLanguage = "floatdude.settings.settingsLanguage"
     }
 
     private let defaults: UserDefaults
@@ -113,6 +157,9 @@ final class SettingsStore: SettingsStoring {
         defaults.set(validated.model, forKey: Key.model)
         defaults.set(validated.hotkeyDescription, forKey: Key.shortcutDescriptor)
         defaults.set(validated.credentialMode.rawValue, forKey: Key.credentialMode)
+        defaults.set(validated.userSystemPrompt, forKey: Key.userSystemPrompt)
+        defaults.set(validated.launchAtLogin, forKey: Key.launchAtLogin)
+        defaults.set(validated.settingsLanguage.rawValue, forKey: Key.settingsLanguage)
         current = validated
     }
 
@@ -165,6 +212,13 @@ final class SettingsStore: SettingsStoring {
         guard !shortcut.isEmpty else {
             throw SettingsValidationError.emptyShortcut
         }
+        let userSystemPrompt = settings.userSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard userSystemPrompt.count <= 12_000 else {
+            throw SettingsValidationError.systemPromptTooLong
+        }
+        guard !SensitiveTextDetector.containsCredential(in: userSystemPrompt) else {
+            throw SettingsValidationError.systemPromptContainsCredential
+        }
 
         let baseURL: URL?
         if let url = settings.baseURL {
@@ -176,7 +230,10 @@ final class SettingsStore: SettingsStoring {
             baseURL: baseURL,
             model: model,
             hotkeyDescription: shortcut,
-            credentialMode: settings.credentialMode
+            credentialMode: settings.credentialMode,
+            userSystemPrompt: userSystemPrompt,
+            launchAtLogin: settings.launchAtLogin,
+            settingsLanguage: settings.settingsLanguage
         )
     }
 
@@ -191,6 +248,11 @@ final class SettingsStore: SettingsStoring {
             .flatMap(CredentialMode.init(rawValue:))
             ?? AppSettings.default.credentialMode
         let credentialMode: CredentialMode
+        let userSystemPrompt = defaults.string(forKey: Key.userSystemPrompt) ?? ""
+        let launchAtLogin = defaults.bool(forKey: Key.launchAtLogin)
+        let settingsLanguage = defaults.string(forKey: Key.settingsLanguage)
+            .flatMap(SettingsLanguage.init(rawValue:))
+            ?? AppSettings.default.settingsLanguage
         if storedCredentialMode == .noAuthentication,
            baseURL == AppSettings.default.baseURL {
             // Early v0.1 builds persisted No Authentication even though the
@@ -205,7 +267,10 @@ final class SettingsStore: SettingsStoring {
             baseURL: baseURL,
             model: model,
             hotkeyDescription: shortcut,
-            credentialMode: credentialMode
+            credentialMode: credentialMode,
+            userSystemPrompt: userSystemPrompt,
+            launchAtLogin: launchAtLogin,
+            settingsLanguage: settingsLanguage
         )
     }
 }

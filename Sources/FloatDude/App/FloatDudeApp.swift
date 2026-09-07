@@ -33,6 +33,12 @@ private struct MenuBarView: View {
             Button("Ask FloatDude…") {
                 runtime.coordinator.beginInvocation()
             }
+            Button("New Conversation") {
+                runtime.startNewConversation()
+            }
+            Button("Open Exports Folder") {
+                runtime.openExportsFolder()
+            }
             Button("Settings…") {
                 runtime.openSettings()
             }

@@ -3,6 +3,31 @@ import XCTest
 @testable import FloatDude
 
 final class WindowPositionerTests: XCTestCase {
+    func testIPhone17ProMaxCanvasIsTheMaximumAt1080pAndLarger() {
+        let fullHD = PanelSizePolicy.maximumSize(
+            for: CGRect(x: 0, y: 0, width: 1_920, height: 1_080)
+        )
+        let larger = PanelSizePolicy.maximumSize(
+            for: CGRect(x: 0, y: 0, width: 2_560, height: 1_440)
+        )
+
+        XCTAssertEqual(fullHD, CGSize(width: 440, height: 956))
+        XCTAssertEqual(larger, CGSize(width: 440, height: 956))
+    }
+
+    func testPanelCanvasScalesProportionallyBelow1080pBeforeSafeFrameClamp() {
+        let display = CGRect(x: 0, y: 0, width: 1_600, height: 900)
+        let fitted = PanelSizePolicy.fittedPanelSize(
+            CGSize(width: 440, height: 956),
+            displayFrame: display,
+            visibleFrame: display,
+            edgeInset: 12
+        )
+
+        XCTAssertEqual(fitted.width, 440 * 900 / 1_080, accuracy: 0.01)
+        XCTAssertEqual(fitted.height, 956 * 900 / 1_080, accuracy: 0.01)
+    }
+
     func testUsesDisplayContainingCursor() {
         let displays = [
             DisplayGeometry(

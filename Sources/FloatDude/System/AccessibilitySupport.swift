@@ -10,12 +10,25 @@ import Foundation
 protocol AccessibilityProviding: Sendable {
     var isTrusted: Bool { get }
     func focusedElement() throws -> AXUIElement?
+    func focusedElement(in processID: pid_t?) throws -> AXUIElement?
+    func textSelectionCandidates(from focusedElement: AXUIElement) -> [AXUIElement]
+    func prepareForSelectionCapture(in processID: pid_t?)
     func selectedText(from focusedElement: AXUIElement) throws -> String?
     func selectedTextBounds(from focusedElement: AXUIElement) throws -> CGRect?
     func canReplaceSelectedText(in focusedElement: AXUIElement) throws -> Bool
 }
 
 extension AccessibilityProviding {
+    func focusedElement(in _: pid_t?) throws -> AXUIElement? {
+        try focusedElement()
+    }
+
+    func textSelectionCandidates(from focusedElement: AXUIElement) -> [AXUIElement] {
+        [focusedElement]
+    }
+
+    func prepareForSelectionCapture(in _: pid_t?) {}
+
     func selectedTextBounds(from focusedElement: AXUIElement) throws -> CGRect? {
         nil
     }
@@ -59,9 +72,35 @@ struct SystemAccessibilityProvider: AccessibilityProviding {
         AXIsProcessTrusted()
     }
 
+    func prepareForSelectionCapture(in processID: pid_t?) {
+        guard let processID,
+              let application = NSRunningApplication(processIdentifier: processID),
+              application.bundleIdentifier == "com.bytedance.macos.feishu"
+        else { return }
+
+        // Feishu's desktop renderer is Chromium/Electron-like. Electron only
+        // exposes its full AX tree to third-party assistive technology after
+        // AXManualAccessibility is enabled. The operation is best-effort and
+        // ignored by native applications and older Feishu builds.
+        let applicationElement = AXUIElementCreateApplication(processID)
+        _ = AXUIElementSetAttributeValue(
+            applicationElement,
+            "AXManualAccessibility" as CFString,
+            kCFBooleanTrue
+        )
+    }
+
     func focusedElement() throws -> AXUIElement? {
+        try focusedElement(in: nil)
+    }
+
+    func focusedElement(in processID: pid_t?) throws -> AXUIElement? {
         guard isTrusted else {
             return nil
+        }
+
+        if let processID {
+            return try focusedElement(inApplication: AXUIElementCreateApplication(processID))
         }
 
         let systemWideElement = AXUIElementCreateSystemWide()
@@ -85,8 +124,11 @@ struct SystemAccessibilityProvider: AccessibilityProviding {
         guard let frontmost = NSWorkspace.shared.frontmostApplication else {
             return nil
         }
-        let applicationElement = AXUIElementCreateApplication(frontmost.processIdentifier)
-        focusedValue = nil
+        return try focusedElement(inApplication: AXUIElementCreateApplication(frontmost.processIdentifier))
+    }
+
+    private func focusedElement(inApplication applicationElement: AXUIElement) throws -> AXUIElement? {
+        var focusedValue: CFTypeRef?
         let applicationStatus = AXUIElementCopyAttributeValue(
             applicationElement,
             kAXFocusedUIElementAttribute as CFString,
@@ -97,6 +139,48 @@ struct SystemAccessibilityProvider: AccessibilityProviding {
               CFGetTypeID(focusedValue) == AXUIElementGetTypeID()
         else { return nil }
         return unsafeDowncast(focusedValue, to: AXUIElement.self)
+    }
+
+    func textSelectionCandidates(from focusedElement: AXUIElement) -> [AXUIElement] {
+        var candidates: [AXUIElement] = [focusedElement]
+        var ancestor = focusedElement
+        for _ in 0..<4 {
+            var parentValue: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(
+                ancestor,
+                kAXParentAttribute as CFString,
+                &parentValue
+            ) == .success,
+            let parentValue,
+            CFGetTypeID(parentValue) == AXUIElementGetTypeID()
+            else { break }
+            let parent = unsafeDowncast(parentValue, to: AXUIElement.self)
+            candidates.append(parent)
+            ancestor = parent
+        }
+
+        // Electron often places selected text on an AXWebArea or a nearby
+        // descendant instead of the focused group. Search a bounded local
+        // neighborhood so one pathological tree cannot stall the hot-key path.
+        var queue = candidates
+        var cursor = 0
+        while cursor < queue.count, candidates.count < 64 {
+            let element = queue[cursor]
+            cursor += 1
+            var childrenValue: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(
+                element,
+                kAXChildrenAttribute as CFString,
+                &childrenValue
+            ) == .success,
+            let children = childrenValue as? [AXUIElement]
+            else { continue }
+            for child in children where candidates.count < 64 {
+                candidates.append(child)
+                queue.append(child)
+            }
+        }
+        return candidates
     }
 
     func selectedText(from focusedElement: AXUIElement) throws -> String? {

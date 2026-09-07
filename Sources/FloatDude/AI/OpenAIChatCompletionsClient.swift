@@ -6,6 +6,7 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
     private let transport: any LLMStreamingTransport
     private let prompts: any PromptActionProviding
     private let endpointURL: URL
+    private let toolExecutor: NativeToolExecutor
 
     init(
         configuration: LLMConfiguration,
@@ -53,7 +54,8 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
         configuration: LLMConfiguration,
         credentials: ProviderCredentials,
         transport: any LLMStreamingTransport,
-        prompts: any PromptActionProviding = PromptActions()
+        prompts: any PromptActionProviding = PromptActions(),
+        toolExecutor: NativeToolExecutor = NativeToolExecutor()
     ) throws {
         guard credentials.mode == .noAuthentication || credentials.hasAPIKey else {
             throw LLMClientError.missingAPIKey
@@ -66,6 +68,7 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
         self.credentials = credentials
         self.transport = transport
         self.prompts = prompts
+        self.toolExecutor = toolExecutor
         self.endpointURL = try configuration.apiFormat == .anthropicMessages
             ? LLMEndpoint.anthropicMessagesURL(for: configuration.baseURL)
             : LLMEndpoint.chatCompletionsURL(for: configuration.baseURL)
@@ -117,49 +120,57 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
         continuation: AsyncThrowingStream<LLMStreamEvent, Error>.Continuation,
         gate: StreamCancellationGate
     ) async throws {
-        var urlRequest = URLRequest(url: endpointURL)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-        switch credentials.mode {
-        case .noAuthentication:
-            break
-        case .thisSessionOnly, .rememberOnThisMac:
-            guard let apiKey = credentials.apiKey, !apiKey.isEmpty else {
-                throw LLMClientError.missingAPIKey
+        var exchanges: [ToolExchange] = []
+        for _ in 0..<8 {
+            var urlRequest = URLRequest(url: endpointURL)
+            urlRequest.httpMethod = "POST"
+            urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            urlRequest.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+            switch credentials.mode {
+            case .noAuthentication:
+                break
+            case .thisSessionOnly, .rememberOnThisMac:
+                guard let apiKey = credentials.apiKey, !apiKey.isEmpty else {
+                    throw LLMClientError.missingAPIKey
+                }
+                switch configuration.apiFormat {
+                case .openAIChatCompletions:
+                    urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+                case .anthropicMessages:
+                    urlRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")
+                    urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+                }
             }
-            switch configuration.apiFormat {
-            case .openAIChatCompletions:
-                urlRequest.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-            case .anthropicMessages:
-                urlRequest.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-                urlRequest.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
-            }
-        }
-        urlRequest.httpBody = try requestBody(for: request)
+            urlRequest.httpBody = try requestBody(for: request, exchanges: exchanges)
 
-        let response = try await transport.open(urlRequest)
-        try await withTaskCancellationHandler(
-            operation: {
-                defer { response.cancel() }
-                try await consume(
-                    response,
-                    continuation: continuation,
-                    gate: gate
-                )
-            },
-            onCancel: {
-                gate.cancel()
-                response.cancel()
+            let response = try await transport.open(urlRequest)
+            let pass = try await withTaskCancellationHandler(
+                operation: {
+                    defer { response.cancel() }
+                    return try await consumePass(response, continuation: continuation, gate: gate)
+                },
+                onCancel: {
+                    gate.cancel()
+                    response.cancel()
+                }
+            )
+            if pass.toolCalls.isEmpty {
+                _ = continuation.yield(.completed)
+                return
             }
-        )
+            let results = try pass.toolCalls.map {
+                try toolExecutor.execute($0, attachments: request.attachments)
+            }
+            exchanges.append(ToolExchange(calls: pass.toolCalls, results: results))
+        }
+        throw AgentEngineError.toolLimitReached
     }
 
-    private func consume(
+    private func consumePass(
         _ response: LLMHTTPResponse,
         continuation: AsyncThrowingStream<LLMStreamEvent, Error>.Continuation,
         gate: StreamCancellationGate
-    ) async throws {
+    ) async throws -> ModelPass {
         try checkCancellation(gate)
         guard (200..<300).contains(response.statusCode) else {
             let body = try await collect(response.body, gate: gate, limit: 64 * 1024)
@@ -171,64 +182,62 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
         }
 
         var parser = SSEParser()
-        var completed = false
+        var pass = ModelPass()
 
         for try await chunk in response.body {
             try checkCancellation(gate)
             let events = try parser.append(chunk)
             for event in events {
-                try emit(event, completed: &completed, continuation: continuation, gate: gate)
+                try consume(event, pass: &pass, continuation: continuation, gate: gate)
             }
-            if completed {
-                return
+            if pass.completed {
+                return pass
             }
         }
 
         let finalEvents = try parser.finish()
         for event in finalEvents {
-            try emit(event, completed: &completed, continuation: continuation, gate: gate)
+            try consume(event, pass: &pass, continuation: continuation, gate: gate)
         }
-        if !completed {
+        if !pass.completed {
             throw LLMClientError.incompleteStream
         }
+        return pass
     }
 
-    private func emit(
+    private func consume(
         _ event: SSEEvent,
-        completed: inout Bool,
+        pass: inout ModelPass,
         continuation: AsyncThrowingStream<LLMStreamEvent, Error>.Continuation,
         gate: StreamCancellationGate
     ) throws {
         try checkCancellation(gate)
         switch configuration.apiFormat {
         case .openAIChatCompletions:
-            try emitOpenAI(
+            try consumeOpenAI(
                 event,
-                completed: &completed,
+                pass: &pass,
                 continuation: continuation,
                 gate: gate
             )
         case .anthropicMessages:
-            try emitAnthropic(
+            try consumeAnthropic(
                 event,
-                completed: &completed,
+                pass: &pass,
                 continuation: continuation,
                 gate: gate
             )
         }
     }
 
-    private func emitOpenAI(
+    private func consumeOpenAI(
         _ event: SSEEvent,
-        completed: inout Bool,
+        pass: inout ModelPass,
         continuation: AsyncThrowingStream<LLMStreamEvent, Error>.Continuation,
         gate: StreamCancellationGate
     ) throws {
         if event.data == "[DONE]" {
-            if !completed {
-                _ = continuation.yield(.completed)
-                completed = true
-            }
+            pass.completed = true
             return
         }
         guard let data = event.data.data(using: .utf8) else {
@@ -247,17 +256,19 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
         }
 
         for choice in chunk.choices ?? [] {
-            guard let content = choice.delta?.content, !content.isEmpty else {
-                continue
+            if let content = choice.delta?.content, !content.isEmpty {
+                try checkCancellation(gate)
+                _ = continuation.yield(.textDelta(content))
             }
-            try checkCancellation(gate)
-            _ = continuation.yield(.textDelta(content))
+            for toolDelta in choice.delta?.toolCalls ?? [] {
+                pass.openAITools.append(toolDelta)
+            }
         }
     }
 
-    private func emitAnthropic(
+    private func consumeAnthropic(
         _ event: SSEEvent,
-        completed: inout Bool,
+        pass: inout ModelPass,
         continuation: AsyncThrowingStream<LLMStreamEvent, Error>.Continuation,
         gate: StreamCancellationGate
     ) throws {
@@ -274,22 +285,35 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
 
         switch message.type {
         case "message_stop":
-            if !completed {
-                _ = continuation.yield(.completed)
-                completed = true
-            }
+            pass.completed = true
         case "error":
             let providerMessage = message.error?.message ?? "Unknown provider error"
             throw LLMClientError.provider(
                 LLMSecretRedactor.redact(providerMessage, apiKey: credentials.apiKey ?? "")
             )
         case "content_block_delta":
-            guard message.delta?.type == "text_delta",
-                  let text = message.delta?.text,
-                  !text.isEmpty
-            else { return }
-            try checkCancellation(gate)
-            _ = continuation.yield(.textDelta(text))
+            if message.delta?.type == "text_delta",
+               let text = message.delta?.text,
+               !text.isEmpty {
+                try checkCancellation(gate)
+                _ = continuation.yield(.textDelta(text))
+            } else if message.delta?.type == "input_json_delta",
+                      let partial = message.delta?.partialJSON,
+                      let index = message.index {
+                pass.anthropicTools.appendJSON(partial, at: index)
+            }
+        case "content_block_start":
+            if let index = message.index,
+               message.contentBlock?.type == "tool_use",
+               let id = message.contentBlock?.id,
+               let name = message.contentBlock?.name {
+                pass.anthropicTools.start(
+                    index: index,
+                    id: id,
+                    name: name,
+                    initialInput: message.contentBlock?.input
+                )
+            }
         default:
             // message_start, content_block_start, message_delta, ping, and
             // other metadata events do not contribute visible answer text.
@@ -297,7 +321,7 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
         }
     }
 
-    private func requestBody(for request: LLMRequest) throws -> Data {
+    private func requestBody(for request: LLMRequest, exchanges: [ToolExchange]) throws -> Data {
         let context = request.context?.text.trimmingCharacters(in: .whitespacesAndNewlines)
         let prompt = request.userPrompt?.trimmingCharacters(in: .whitespacesAndNewlines)
         let sensitiveContext = request.context.map {
@@ -322,29 +346,169 @@ struct OpenAIChatCompletionsClient: LLMClient, Sendable {
             userContent = "Please respond to the requested action."
         }
 
-        let systemInstruction = prompts.systemInstruction(for: request.action)
+        let attachmentIndex = request.attachments.isEmpty ? "" : """
+
+        Attached files available through the read tool:
+        \(request.attachments.map { "- \($0.id.uuidString): \($0.displayName) (\($0.kind.displayName))" }.joined(separator: "\n"))
+        """
+        let actionInstruction = prompts.systemInstruction(for: request.action)
+        let currentContent = """
+        Requested action: \(request.action.title)
+        Action instruction: \(actionInstruction)
+
+        \(userContent)\(attachmentIndex)
+        """
         switch configuration.apiFormat {
         case .openAIChatCompletions:
-            let body = ChatCompletionRequest(
-                model: configuration.model,
-                stream: true,
-                messages: [
-                    .init(role: "system", content: systemInstruction),
-                    .init(role: "user", content: userContent)
-                ]
-            )
-            return try JSONEncoder().encode(body)
+            var messages: [[String: Any]] = [
+                ["role": "system", "content": SoftwareRootPrompt.text],
+            ]
+            if !request.userSystemPrompt.isEmpty {
+                messages.append(["role": "system", "content": request.userSystemPrompt])
+            }
+            messages.append(contentsOf: request.history.map {
+                ["role": $0.role.rawValue, "content": $0.content]
+            })
+            messages.append(["role": "user", "content": currentContent])
+            for exchange in exchanges {
+                messages.append([
+                    "role": "assistant",
+                    "content": NSNull(),
+                    "tool_calls": exchange.calls.map { call in
+                        [
+                            "id": call.id,
+                            "type": "function",
+                            "function": ["name": call.name, "arguments": call.argumentsJSON],
+                        ] as [String: Any]
+                    },
+                ])
+                messages.append(contentsOf: exchange.results.map {
+                    ["role": "tool", "tool_call_id": $0.callID, "content": $0.content]
+                })
+            }
+            var body: [String: Any] = [
+                "model": configuration.model,
+                "stream": true,
+                "messages": messages,
+                "tools": Self.openAIToolDefinitions,
+                "tool_choice": "auto",
+            ]
+            if configuration.baseURL.host?.lowercased() == "api.openai.com" {
+                body["prompt_cache_key"] = "\(SoftwareRootPrompt.version):\(request.sessionID.uuidString)"
+                body["prompt_cache_retention"] = "24h"
+            }
+            return try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
         case .anthropicMessages:
-            let body = AnthropicMessagesRequest(
-                model: configuration.model,
-                maxTokens: 4096,
-                system: systemInstruction,
-                stream: true,
-                messages: [
-                    .init(role: "user", content: [.init(type: "text", text: userContent)])
-                ]
-            )
-            return try JSONEncoder().encode(body)
+            let officialAnthropic = configuration.baseURL.host?.lowercased() == "api.anthropic.com"
+            let system: Any
+            var systemBlocks: [[String: Any]] = [[
+                "type": "text",
+                "text": SoftwareRootPrompt.text,
+            ]]
+            if officialAnthropic {
+                systemBlocks[0]["cache_control"] = ["type": "ephemeral"]
+            }
+            if !request.userSystemPrompt.isEmpty {
+                systemBlocks.append(["type": "text", "text": request.userSystemPrompt])
+            }
+            system = officialAnthropic
+                ? systemBlocks
+                : systemBlocks.compactMap { $0["text"] as? String }.joined(separator: "\n\n")
+
+            var messages: [[String: Any]] = request.history.map {
+                ["role": $0.role.rawValue, "content": [["type": "text", "text": $0.content]]]
+            }
+            messages.append(["role": "user", "content": [["type": "text", "text": currentContent]]])
+            for exchange in exchanges {
+                messages.append([
+                    "role": "assistant",
+                    "content": exchange.calls.map { call in
+                        [
+                            "type": "tool_use",
+                            "id": call.id,
+                            "name": call.name,
+                            "input": (try? Self.argumentsObject(call.argumentsJSON)) ?? [:],
+                        ] as [String: Any]
+                    },
+                ])
+                messages.append([
+                    "role": "user",
+                    "content": exchange.results.map { result in
+                        [
+                            "type": "tool_result",
+                            "tool_use_id": result.callID,
+                            "content": result.content,
+                            "is_error": result.isError,
+                        ] as [String: Any]
+                    },
+                ])
+            }
+            let body: [String: Any] = [
+                "model": configuration.model,
+                "max_tokens": 4096,
+                "system": system,
+                "stream": true,
+                "messages": messages,
+                "tools": Self.anthropicToolDefinitions,
+                "tool_choice": ["type": "auto"],
+            ]
+            return try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
+        }
+    }
+
+    private static func argumentsObject(_ json: String) throws -> [String: Any] {
+        guard let data = json.data(using: .utf8),
+              let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { throw AgentEngineError.invalidToolArguments }
+        return object
+    }
+
+    private static var readParameters: [String: Any] {
+        [
+            "type": "object",
+            "properties": [
+                "attachment_id": ["type": "string", "description": "UUID shown in the attached-file index."],
+                "offset": ["type": "integer", "minimum": 0],
+                "limit": ["type": "integer", "minimum": 1, "maximum": 40_000],
+            ],
+            "required": ["attachment_id"],
+            "additionalProperties": false,
+        ]
+    }
+
+    private static var writeParameters: [String: Any] {
+        [
+            "type": "object",
+            "properties": [
+                "name": ["type": "string", "description": "Safe filename; .md is added when no extension is supplied."],
+                "content": ["type": "string", "description": "UTF-8 text or Markdown content."],
+            ],
+            "required": ["name", "content"],
+            "additionalProperties": false,
+        ]
+    }
+
+    private static var openAIToolDefinitions: [[String: Any]] {
+        NativeAgentTool.allCases.map { tool in
+            [
+                "type": "function",
+                "function": [
+                    "name": tool.rawValue,
+                    "description": tool.promptDescription,
+                    "parameters": tool == .read ? readParameters : writeParameters,
+                    "strict": true,
+                ] as [String: Any],
+            ]
+        }
+    }
+
+    private static var anthropicToolDefinitions: [[String: Any]] {
+        NativeAgentTool.allCases.map { tool in
+            [
+                "name": tool.rawValue,
+                "description": tool.promptDescription,
+                "input_schema": tool == .read ? readParameters : writeParameters,
+            ]
         }
     }
 
@@ -450,17 +614,170 @@ private struct ChatCompletionChunk: Decodable, Sendable {
 
     struct Delta: Decodable, Sendable {
         let content: String?
+        let toolCalls: [OpenAIToolCallDelta]?
+
+        enum CodingKeys: String, CodingKey {
+            case content
+            case toolCalls = "tool_calls"
+        }
+    }
+}
+
+private struct OpenAIToolCallDelta: Decodable, Sendable {
+    let index: Int
+    let id: String?
+    let function: FunctionDelta?
+
+    struct FunctionDelta: Decodable, Sendable {
+        let name: String?
+        let arguments: String?
     }
 }
 
 private struct AnthropicStreamEvent: Decodable, Sendable {
     let type: String
+    let index: Int?
     let delta: Delta?
+    let contentBlock: ContentBlock?
     let error: ProviderError?
+
+    enum CodingKeys: String, CodingKey {
+        case type, index, delta, error
+        case contentBlock = "content_block"
+    }
 
     struct Delta: Decodable, Sendable {
         let type: String?
         let text: String?
+        let partialJSON: String?
+
+        enum CodingKeys: String, CodingKey {
+            case type, text
+            case partialJSON = "partial_json"
+        }
+    }
+
+    struct ContentBlock: Decodable, Sendable {
+        let type: String
+        let id: String?
+        let name: String?
+        let input: [String: JSONValue]?
+    }
+}
+
+private enum JSONValue: Codable, Sendable {
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case object([String: JSONValue])
+    case array([JSONValue])
+    case null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if container.decodeNil() { self = .null }
+        else if let value = try? container.decode(Bool.self) { self = .bool(value) }
+        else if let value = try? container.decode(Double.self) { self = .number(value) }
+        else if let value = try? container.decode(String.self) { self = .string(value) }
+        else if let value = try? container.decode([String: JSONValue].self) { self = .object(value) }
+        else { self = .array(try container.decode([JSONValue].self)) }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case let .string(value): try container.encode(value)
+        case let .number(value): try container.encode(value)
+        case let .bool(value): try container.encode(value)
+        case let .object(value): try container.encode(value)
+        case let .array(value): try container.encode(value)
+        case .null: try container.encodeNil()
+        }
+    }
+}
+
+private struct ToolExchange: Sendable {
+    let calls: [AgentToolCall]
+    let results: [AgentToolResult]
+}
+
+private struct ModelPass {
+    var completed = false
+    var openAITools = OpenAIToolAccumulator()
+    var anthropicTools = AnthropicToolAccumulator()
+
+    var toolCalls: [AgentToolCall] {
+        let openAI = openAITools.calls
+        return openAI.isEmpty ? anthropicTools.calls : openAI
+    }
+}
+
+private struct OpenAIToolAccumulator {
+    private struct Partial {
+        var id = ""
+        var name = ""
+        var arguments = ""
+    }
+
+    private var partials: [Int: Partial] = [:]
+
+    mutating func append(_ delta: OpenAIToolCallDelta) {
+        var partial = partials[delta.index] ?? Partial()
+        if let id = delta.id { partial.id = id }
+        if let name = delta.function?.name { partial.name += name }
+        if let arguments = delta.function?.arguments { partial.arguments += arguments }
+        partials[delta.index] = partial
+    }
+
+    var calls: [AgentToolCall] {
+        partials.keys.sorted().compactMap { index in
+            guard let partial = partials[index], !partial.id.isEmpty, !partial.name.isEmpty else { return nil }
+            return AgentToolCall(
+                id: partial.id,
+                name: partial.name,
+                argumentsJSON: partial.arguments.isEmpty ? "{}" : partial.arguments
+            )
+        }
+    }
+}
+
+private struct AnthropicToolAccumulator {
+    private struct Partial {
+        let id: String
+        let name: String
+        var json: String
+    }
+
+    private var partials: [Int: Partial] = [:]
+
+    mutating func start(index: Int, id: String, name: String, initialInput: [String: JSONValue]?) {
+        let json: String
+        if let initialInput,
+           let data = try? JSONEncoder().encode(initialInput),
+           let value = String(data: data, encoding: .utf8),
+           value != "{}" {
+            json = value
+        } else {
+            json = ""
+        }
+        partials[index] = Partial(id: id, name: name, json: json)
+    }
+
+    mutating func appendJSON(_ fragment: String, at index: Int) {
+        guard var partial = partials[index] else { return }
+        partial.json += fragment
+        partials[index] = partial
+    }
+
+    var calls: [AgentToolCall] {
+        partials.keys.sorted().compactMap { index in
+            guard let partial = partials[index] else { return nil }
+            return AgentToolCall(
+                id: partial.id,
+                name: partial.name,
+                argumentsJSON: partial.json.isEmpty ? "{}" : partial.json
+            )
+        }
     }
 }
 

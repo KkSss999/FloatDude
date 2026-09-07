@@ -15,7 +15,7 @@ struct GlassPreview {
         appItem.submenu = appMenu
         menu.addItem(appItem)
         app.mainMenu = menu
-        let canvas = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 1320, height: 640),
+        let canvas = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 1320, height: 760),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         canvas.title = "FloatDude — Glass material review"
         canvas.contentView = NSHostingView(rootView: backdrop)
@@ -30,7 +30,19 @@ struct GlassPreview {
         ]
         var windows: [NSWindow] = [canvas]
         for (index, sample) in samples.enumerated() {
-            let height: CGFloat = sample.1.isResponseVisible ? 420 : sample.2.isEmpty ? 176 : 236
+            let height: CGFloat = sample.1.isResponseVisible ? 560 : sample.2.isEmpty ? 176 : 236
+            let conversation = AgentConversation(
+                title: "Material research",
+                messages: index == 1
+                    ? [AgentMessage(role: .user, content: "Summarize the attached design notes.")]
+                    : []
+            )
+            let attachment = AgentAttachment(
+                displayName: "design-notes.pdf",
+                kind: .pdf,
+                storedPath: "/synthetic/design-notes.pdf",
+                byteCount: 12_400
+            )
             let origin = NSPoint(x: canvas.frame.minX + [32.0, 460.0, 32.0, 888.0][index],
                                  y: canvas.frame.maxY - (index == 2 ? 380 : 85) - height)
             let panel = NSPanel(contentRect: NSRect(origin: origin, size: CGSize(width: 400, height: height)),
@@ -44,7 +56,12 @@ struct GlassPreview {
                 FloatingPanel(state: .constant(sample.1), prompt: .constant(""),
                               selectedText: sample.2,
                               canRewriteSelection: !sample.2.isEmpty,
-                              selectedAction: .constant(.explain))
+                              selectedAction: .constant(.explain),
+                              conversations: [conversation],
+                              activeConversationID: conversation.id,
+                              conversationMessages: conversation.messages,
+                              attachments: index == 1 ? [attachment] : [],
+                              attachmentStatus: index == 1 ? "1 file ready for read" : nil)
                     .environment(\.colorScheme, sample.3)
             )
             canvas.addChildWindow(panel, ordered: .above)
@@ -56,7 +73,7 @@ struct GlassPreview {
     }
 
     @MainActor private static var backdrop: some View {
-        ReviewBackdrop().frame(width: 1320, height: 640).clipped()
+        ReviewBackdrop().frame(width: 1320, height: 760).clipped()
     }
 }
 
@@ -110,7 +127,7 @@ private struct ReviewBackdrop: View {
             }
             .foregroundStyle(background == 1 ? .white.opacity(0.8) : .black.opacity(0.7))
             .padding(35)
-            .frame(width: 1320, height: 640, alignment: .leading)
+            .frame(width: 1320, height: 760, alignment: .leading)
         }
     }
 }

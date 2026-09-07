@@ -7,6 +7,7 @@ final class AppRuntime: ObservableObject {
     static let shared = AppRuntime()
 
     let settingsStore: SettingsStore
+    let keychainStore: KeychainStore
     let providerSession: ProviderSession
     let clipboardManager: ClipboardManager
     let contextCapturer: SelectionCapture
@@ -16,18 +17,26 @@ final class AppRuntime: ObservableObject {
     @Published private(set) var startupError: String?
 
     private var started = false
-    private var lastResponseVisibility = false
+    private var lastPanelSize = CGSize.zero
+    private var measuredPanelContentHeight: CGFloat?
     private var settingsWindowController: SettingsWindowController?
 
     init() {
         let settingsStore = SettingsStore()
         let keychainStore = KeychainStore()
+        let isTestHost = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+            || ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
         let providerSession = ProviderSession(
-            mode: settingsStore.current.credentialMode,
-            keychainStore: keychainStore
+            // The Xcode UI-test host constructs the real App graph before its
+            // test bundle loads. Never let that bootstrap touch a user's login
+            // Keychain; credential persistence has dedicated injected tests.
+            mode: isTestHost ? .noAuthentication : settingsStore.current.credentialMode,
+            keychainStore: keychainStore,
+            loadRememberedImmediately: isTestHost || settingsStore.current.credentialMode != .rememberOnThisMac
         )
         let clipboardManager = ClipboardManager()
         let contextCapturer = SelectionCapture(pasteboard: clipboardManager)
+        let liveSelectionObserver = SystemLiveSelectionObserver()
         let streamFactory: LLMStreamFactory = { request, configuration, credentials in
             AsyncThrowingStream { continuation in
                 do {
@@ -59,7 +68,9 @@ final class AppRuntime: ObservableObject {
             streamFactory: streamFactory,
             settingsStore: settingsStore,
             providerSession: providerSession,
-            clipboardManager: clipboardManager
+            clipboardManager: clipboardManager,
+            conversationPersistence: FileConversationPersistence(),
+            liveSelectionObserver: liveSelectionObserver
         )
         let configuredDescriptor = (try? GlobalHotkeyDescriptor(parsing: settingsStore.current.hotkeyDescription))
             ?? .optionSpace
@@ -75,6 +86,7 @@ final class AppRuntime: ObservableObject {
             }
         )
         self.settingsStore = settingsStore
+        self.keychainStore = keychainStore
         self.providerSession = providerSession
         self.clipboardManager = clipboardManager
         self.contextCapturer = contextCapturer
@@ -103,6 +115,7 @@ final class AppRuntime: ObservableObject {
         } catch {
             startupError = "The global shortcut could not be registered. Open Settings to choose another shortcut."
         }
+        loadRememberedCredentialInBackground()
     }
 
     func stop() {
@@ -116,7 +129,6 @@ final class AppRuntime: ObservableObject {
     }
 
     func openSettings() {
-        coordinator.cancelAndDismiss()
         let controller: SettingsWindowController
         if let settingsWindowController {
             controller = settingsWindowController
@@ -132,42 +144,101 @@ final class AppRuntime: ObservableObject {
         controller.present()
     }
 
+    func startNewConversation() {
+        coordinator.newConversation()
+        if coordinator.hasActiveInvocation {
+            presentPanel()
+        } else {
+            coordinator.beginInvocation()
+        }
+    }
+
+    func openExportsFolder() {
+        let url = FileConversationPersistence.defaultRootURL()
+            .appendingPathComponent("Exports", isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(url)
+    }
+
+    private func loadRememberedCredentialInBackground() {
+        guard settingsStore.current.credentialMode == .rememberOnThisMac else { return }
+        let keychainStore = self.keychainStore
+        Task { [weak self] in
+            let result = await Task.detached {
+                Result { try keychainStore.apiKey() }
+            }.value
+            guard let self else { return }
+            switch result {
+            case let .success(key?):
+                providerSession.acceptRememberedAPIKey(key)
+            case .success(nil):
+                startupError = "The remembered API key is missing. Apply credentials again in Settings."
+            case .failure:
+                startupError = "The remembered API key could not be loaded. Apply it again in Settings."
+            }
+        }
+    }
+
     private func presentPanel() {
         settingsWindowController?.window?.orderOut(nil)
-        let view = TaskPanelView(coordinator: coordinator) { [weak self] state in
-            self?.resizePanel(for: state)
+        if !panelController.isPresented {
+            measuredPanelContentHeight = nil
         }
-        lastResponseVisibility = coordinator.panelState.isResponseVisible
+        let view = TaskPanelView(
+            coordinator: coordinator,
+            onStateChange: { [weak self] state in
+                self?.resizePanel(for: state)
+            },
+            onContentHeightChange: { [weak self] contentHeight in
+                self?.updateMeasuredPanelContentHeight(contentHeight)
+            }
+        )
+        let size = panelSize(for: coordinator.panelState)
+        lastPanelSize = size
         panelController.present(
             content: { view },
-            panelSize: panelSize(for: coordinator.panelState),
+            panelSize: size,
             avoiding: coordinator.session.context?.selectionRect,
             activateForInput: coordinator.session.context == nil
         )
     }
 
     private func resizePanel(for state: FloatingPanelState) {
-        guard state.isResponseVisible != lastResponseVisibility else { return }
-        lastResponseVisibility = state.isResponseVisible
+        let size = panelSize(for: state)
+        guard size != lastPanelSize else { return }
+        lastPanelSize = size
         panelController.update(
-            panelSize: panelSize(for: state),
+            panelSize: size,
             avoiding: coordinator.session.context?.selectionRect
         )
     }
 
+    private func updateMeasuredPanelContentHeight(_ contentHeight: CGFloat) {
+        let normalized = max(1, contentHeight)
+        guard measuredPanelContentHeight.map({ abs($0 - normalized) > 1 }) ?? true else { return }
+        measuredPanelContentHeight = normalized
+        resizePanel(for: coordinator.panelState)
+    }
+
     private func panelSize(for state: FloatingPanelState) -> CGSize {
-        let hasContext = coordinator.session.context != nil
-        return switch state {
+        let minimumContentHeight: CGFloat
+        switch state {
         case .loading, .streaming, .completed, .cancelled, .error:
-            CGSize(width: 400, height: 420)
+            minimumContentHeight = 260
         case .idle, .prompting:
-            // Capture guidance (including its recovery link) is real product
-            // content that is absent from the clean visual preview. Reserve
-            // room so it does not push the ask field or actions below the fold.
-            CGSize(
-                width: 400,
-                height: (hasContext ? 236 : 176) + (coordinator.contextGuidance == nil ? 0 : 76)
-            )
+            minimumContentHeight = coordinator.session.context == nil ? 232 : 292
         }
+
+        // Text character counts cannot predict Markdown layout. Use the real
+        // SwiftUI content height once it is available; the fallback only avoids
+        // a cramped first frame. WindowPositioner applies the iPhone canvas cap
+        // and display-scale safe frame after this request.
+        return CGSize(
+            width: PanelSizePolicy.iPhone17ProMaxCanvas.width,
+            height: min(
+                PanelSizePolicy.iPhone17ProMaxCanvas.height,
+                max(minimumContentHeight, measuredPanelContentHeight ?? minimumContentHeight)
+            )
+        )
     }
 }

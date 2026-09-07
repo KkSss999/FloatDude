@@ -38,8 +38,12 @@ final class LLMClientTests: XCTestCase {
         let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
         XCTAssertEqual(json["model"] as? String, "demo-model")
         XCTAssertEqual(json["stream"] as? Bool, true)
-        let messages = try XCTUnwrap(json["messages"] as? [[String: String]])
-        XCTAssertEqual(messages[0]["content"], "Translate the provided text to Chinese. If it is already in Chinese, translate it to English. Return only the translation.")
+        let messages = try XCTUnwrap(json["messages"] as? [[String: Any]])
+        XCTAssertEqual(messages[0]["content"] as? String, SoftwareRootPrompt.text)
+        XCTAssertTrue((messages.last?["content"] as? String)?.contains("Requested action: Translate") == true)
+        XCTAssertEqual((json["tools"] as? [[String: Any]])?.count, 2)
+        XCTAssertNil(json["prompt_cache_key"])
+        XCTAssertNil(json["prompt_cache_retention"])
     }
 
     func testAnthropicDialectBuildsMessagesRequestAndStreamsTextDeltas() async throws {
@@ -83,11 +87,13 @@ final class LLMClientTests: XCTestCase {
         XCTAssertEqual(json["model"] as? String, "deepseek-v4-flash")
         XCTAssertEqual(json["max_tokens"] as? Int, 4096)
         XCTAssertEqual(json["stream"] as? Bool, true)
-        XCTAssertEqual(json["system"] as? String, "Explain the provided text clearly and concisely.")
+        XCTAssertTrue((json["system"] as? String)?.hasPrefix(SoftwareRootPrompt.text) == true)
         let messages = try XCTUnwrap(json["messages"] as? [[String: Any]])
         let content = try XCTUnwrap(messages[0]["content"] as? [[String: String]])
         XCTAssertEqual(content[0]["type"], "text")
-        XCTAssertEqual(content[0]["text"], "source")
+        XCTAssertTrue(content[0]["text"]?.contains("Requested action: Explain") == true)
+        XCTAssertTrue(content[0]["text"]?.contains("source") == true)
+        XCTAssertEqual((json["tools"] as? [[String: Any]])?.count, 2)
     }
 
     func testNoAuthenticationSendsNoAuthenticationHeaders() async throws {
@@ -117,6 +123,90 @@ final class LLMClientTests: XCTestCase {
         XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
         XCTAssertNil(request.value(forHTTPHeaderField: "x-api-key"))
         XCTAssertNil(request.value(forHTTPHeaderField: "anthropic-version"))
+    }
+
+    func testOfficialProviderCacheControlsKeepStableRootPrefix() async throws {
+        let response: @Sendable (URLRequest) -> LLMHTTPResponse = { _ in
+            FakeTransport.response(chunks: [Data("data: [DONE]\n\n".utf8)])
+        }
+        let openAITransport = FakeTransport(handler: response)
+        let openAI = try OpenAIChatCompletionsClient(
+            configuration: LLMConfiguration(baseURL: URL(string: "https://api.openai.com")!, model: "gpt-test"),
+            apiKey: "key",
+            transport: openAITransport
+        )
+        let sessionID = UUID()
+        for try await _ in openAI.stream(LLMRequest(
+            action: .ask,
+            context: nil,
+            userPrompt: "Hello",
+            sessionID: sessionID
+        )) {}
+        let openAIBody = try XCTUnwrap(openAITransport.lastRequest?.httpBody)
+        let openAIJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: openAIBody) as? [String: Any])
+        XCTAssertEqual(openAIJSON["prompt_cache_retention"] as? String, "24h")
+        XCTAssertEqual(
+            openAIJSON["prompt_cache_key"] as? String,
+            "\(SoftwareRootPrompt.version):\(sessionID.uuidString)"
+        )
+
+        let anthropicTransport = FakeTransport { _ in
+            FakeTransport.response(chunks: [Data("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n".utf8)])
+        }
+        let anthropic = try OpenAIChatCompletionsClient(
+            configuration: LLMConfiguration(
+                baseURL: URL(string: "https://api.anthropic.com")!,
+                model: "claude-test",
+                apiFormat: .anthropicMessages
+            ),
+            apiKey: "key",
+            transport: anthropicTransport
+        )
+        for try await _ in anthropic.stream(LLMRequest(action: .ask, context: nil, userPrompt: "Hello")) {}
+        let anthropicBody = try XCTUnwrap(anthropicTransport.lastRequest?.httpBody)
+        let anthropicJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: anthropicBody) as? [String: Any])
+        let system = try XCTUnwrap(anthropicJSON["system"] as? [[String: Any]])
+        XCTAssertEqual(system[0]["text"] as? String, SoftwareRootPrompt.text)
+        XCTAssertEqual((system[0]["cache_control"] as? [String: String])?["type"], "ephemeral")
+    }
+
+    func testModelCatalogClientRequestsModelsWithProviderAuthentication() async throws {
+        URLProtocolStub.configure(chunks: [Data(#"{"data":[{"id":"model-b"},{"id":"model-a"}]}"#.utf8)])
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [URLProtocolStub.self]
+        let client = ModelCatalogClient(session: URLSession(configuration: sessionConfiguration))
+
+        let models = try await client.fetchModels(
+            configuration: LLMConfiguration(
+                baseURL: URL(string: "https://provider.example/api")!,
+                model: "model-a"
+            ),
+            credentials: ProviderCredentials(mode: .thisSessionOnly, apiKey: "test-key")
+        )
+
+        XCTAssertEqual(models, ["model-a", "model-b"])
+        XCTAssertEqual(URLProtocolStub.lastRequest?.url?.absoluteString, "https://provider.example/api/v1/models")
+        XCTAssertEqual(URLProtocolStub.lastRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer test-key")
+    }
+
+    func testModelCatalogErrorRedactsStoredCredential() async throws {
+        URLProtocolStub.configure(
+            chunks: [Data(#"{"error":{"message":"rejected Bearer secret-model-key"}}"#.utf8)],
+            statusCode: 401
+        )
+        let sessionConfiguration = URLSessionConfiguration.ephemeral
+        sessionConfiguration.protocolClasses = [URLProtocolStub.self]
+        let client = ModelCatalogClient(session: URLSession(configuration: sessionConfiguration))
+
+        do {
+            _ = try await client.fetchModels(
+                configuration: LLMConfiguration(baseURL: URL(string: "https://provider.example")!, model: "model"),
+                credentials: ProviderCredentials(mode: .thisSessionOnly, apiKey: "secret-model-key")
+            )
+            XCTFail("Expected model test failure")
+        } catch {
+            XCTAssertFalse(error.localizedDescription.contains("secret-model-key"))
+        }
     }
 
     func testIncompleteOpenAIAndAnthropicStreamsFailInsteadOfCompleting() async throws {
@@ -303,6 +393,112 @@ final class LLMClientTests: XCTestCase {
         XCTAssertTrue(cancellation.wasCalled)
     }
 
+    func testAgentExecutesWriteToolAndContinuesToFinalAnswer() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FloatDude-ToolLoop-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let toolEvent = ##"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call-1","function":{"name":"write","arguments":"{\"name\":\"tool-output\",\"content\":\"# Saved\"}"}}]}}]}"##
+            + "\n\ndata: [DONE]\n\n"
+        let finalEvent = #"data: {"choices":[{"delta":{"content":"Saved the artifact."}}]}"#
+            + "\n\ndata: [DONE]\n\n"
+        let transport = SequencedTransport(responses: [
+            FakeTransport.response(chunks: [Data(toolEvent.utf8)]),
+            FakeTransport.response(chunks: [Data(finalEvent.utf8)]),
+        ])
+        let client = try OpenAIChatCompletionsClient(
+            configuration: LLMConfiguration(baseURL: URL(string: "https://provider.example")!, model: "demo"),
+            credentials: ProviderCredentials(mode: .thisSessionOnly, apiKey: "test-key"),
+            transport: transport,
+            toolExecutor: NativeToolExecutor(exportDirectory: directory)
+        )
+
+        var events: [LLMStreamEvent] = []
+        for try await event in client.stream(LLMRequest(
+            action: .ask,
+            context: nil,
+            userPrompt: "Write an artifact",
+            history: [AgentMessage(role: .user, content: "Earlier question"),
+                      AgentMessage(role: .assistant, content: "Earlier answer")],
+            userSystemPrompt: "Prefer concise answers."
+        )) {
+            events.append(event)
+        }
+
+        XCTAssertEqual(events, [.textDelta("Saved the artifact."), .completed])
+        XCTAssertEqual(transport.requestCount, 2)
+        XCTAssertEqual(try String(contentsOf: directory.appendingPathComponent("tool-output.md"), encoding: .utf8), "# Saved")
+        let finalBody = try XCTUnwrap(transport.lastRequest?.httpBody)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: finalBody) as? [String: Any])
+        let messages = try XCTUnwrap(json["messages"] as? [[String: Any]])
+        XCTAssertTrue(messages.contains { $0["role"] as? String == "tool" })
+        XCTAssertEqual(messages[0]["content"] as? String, SoftwareRootPrompt.text)
+        XCTAssertEqual(messages[1]["content"] as? String, "Prefer concise answers.")
+    }
+
+    func testAnthropicAgentExecutesReadToolAndContinues() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FloatDude-AnthropicTool-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let file = directory.appendingPathComponent("notes.md")
+        try Data("Attachment evidence".utf8).write(to: file)
+        let attachment = AgentAttachment(
+            displayName: "notes.md",
+            kind: .markdown,
+            storedPath: file.path,
+            byteCount: 19
+        )
+        let arguments = "{\"attachment_id\":\"\(attachment.id.uuidString)\",\"offset\":0,\"limit\":100}"
+        let encodedArguments = arguments
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        let toolEvents = [
+            "event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"read-1\",\"name\":\"read\",\"input\":{}}}\n\n",
+            "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\(encodedArguments)\"}}\n\n",
+            "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+        ].map { Data($0.utf8) }
+        let finalEvents = [
+            Data("event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"Read complete.\"}}\n\n".utf8),
+            Data("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n".utf8),
+        ]
+        let transport = SequencedTransport(responses: [
+            FakeTransport.response(chunks: toolEvents),
+            FakeTransport.response(chunks: finalEvents),
+        ])
+        let client = try OpenAIChatCompletionsClient(
+            configuration: LLMConfiguration(
+                baseURL: URL(string: "https://provider.example/anthropic")!,
+                model: "claude-test"
+            ),
+            credentials: ProviderCredentials(mode: .thisSessionOnly, apiKey: "key"),
+            transport: transport,
+            toolExecutor: NativeToolExecutor(
+                exportDirectory: directory.appendingPathComponent("exports"),
+                attachmentRoot: directory
+            )
+        )
+
+        var events: [LLMStreamEvent] = []
+        for try await event in client.stream(LLMRequest(
+            action: .ask,
+            context: nil,
+            userPrompt: "Read the attachment",
+            attachments: [attachment]
+        )) {
+            events.append(event)
+        }
+
+        XCTAssertEqual(events, [.textDelta("Read complete."), .completed])
+        XCTAssertEqual(transport.requestCount, 2)
+        let body = try XCTUnwrap(transport.lastRequest?.httpBody)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let messages = try XCTUnwrap(json["messages"] as? [[String: Any]])
+        let toolResultMessage = try XCTUnwrap(messages.last)
+        let content = try XCTUnwrap(toolResultMessage["content"] as? [[String: Any]])
+        XCTAssertEqual(content[0]["type"] as? String, "tool_result")
+        XCTAssertTrue((content[0]["content"] as? String)?.contains("Attachment evidence") == true)
+    }
+
     private func makeClient(transport: any LLMStreamingTransport) throws -> OpenAIChatCompletionsClient {
         try OpenAIChatCompletionsClient(
             configuration: LLMConfiguration(baseURL: URL(string: "https://provider.example")!, model: "demo-model"),
@@ -348,6 +544,33 @@ private final class FakeTransport: LLMStreamingTransport, @unchecked Sendable {
             }
         }
         return LLMHTTPResponse(statusCode: statusCode, body: body)
+    }
+}
+
+private final class SequencedTransport: LLMStreamingTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private var responses: [LLMHTTPResponse]
+    private var requests: [URLRequest] = []
+
+    init(responses: [LLMHTTPResponse]) {
+        self.responses = responses
+    }
+
+    var requestCount: Int {
+        lock.lock(); defer { lock.unlock() }
+        return requests.count
+    }
+
+    var lastRequest: URLRequest? {
+        lock.lock(); defer { lock.unlock() }
+        return requests.last
+    }
+
+    func open(_ request: URLRequest) async throws -> LLMHTTPResponse {
+        lock.withLock {
+            requests.append(request)
+            return responses.removeFirst()
+        }
     }
 }
 
@@ -428,6 +651,7 @@ private final class URLProtocolStub: URLProtocol, @unchecked Sendable {
         let lock = NSLock()
         var chunks: [Data] = []
         var request: URLRequest?
+        var statusCode = 200
     }
 
     private static let state = State()
@@ -438,10 +662,11 @@ private final class URLProtocolStub: URLProtocol, @unchecked Sendable {
         return state.request
     }
 
-    static func configure(chunks: [Data]) {
+    static func configure(chunks: [Data], statusCode: Int = 200) {
         state.lock.lock()
         state.chunks = chunks
         state.request = nil
+        state.statusCode = statusCode
         state.lock.unlock()
     }
 
@@ -455,15 +680,17 @@ private final class URLProtocolStub: URLProtocol, @unchecked Sendable {
 
     override func startLoading() {
         let chunks: [Data]
+        let statusCode: Int
         Self.state.lock.lock()
         Self.state.request = request
         chunks = Self.state.chunks
+        statusCode = Self.state.statusCode
         Self.state.lock.unlock()
 
         guard let url = request.url,
               let response = HTTPURLResponse(
                   url: url,
-                  statusCode: 200,
+                  statusCode: statusCode,
                   httpVersion: "HTTP/1.1",
                   headerFields: ["Content-Type": "text/event-stream"]
               )

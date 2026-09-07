@@ -17,6 +17,11 @@ final class TaskCoordinator: ObservableObject {
     @Published var selectedAction: PromptAction = .explain
     @Published var userPrompt = ""
     @Published private(set) var contextGuidance: String?
+    @Published private(set) var conversations: [AgentConversation]
+    @Published private(set) var activeConversationID: UUID
+    @Published private(set) var attachmentStatus: String?
+    @Published private(set) var persistenceStatus: String?
+    @Published private(set) var responseDisplayID: UUID?
 
     var hasActiveInvocation: Bool {
         activeInvocationID != nil
@@ -48,8 +53,15 @@ final class TaskCoordinator: ObservableObject {
     private let settingsStore: any SettingsStoring
     private let providerSession: any ProviderSessionManaging
     private let clipboardManager: any ClipboardManaging
+    private let conversationPersistence: any ConversationPersisting
+    private let attachmentImporter: AttachmentImporter
+    private let liveSelectionObserver: (any LiveSelectionObserving)?
+    private let conversationPersistenceEnabled: Bool
     private var streamTask: Task<Void, Never>?
+    private var liveContextTask: Task<Void, Never>?
     private var activeInvocationID: UUID?
+    private var responseConversationID: UUID?
+    private var retryRequest: LLMRequest?
 
     init(
         contextCapturer: any ContextCapturing,
@@ -57,22 +69,46 @@ final class TaskCoordinator: ObservableObject {
         settingsStore: any SettingsStoring,
         providerSession: any ProviderSessionManaging,
         clipboardManager: any ClipboardManaging,
+        conversationPersistence: any ConversationPersisting = VolatileConversationPersistence(),
+        attachmentImporter: AttachmentImporter = AttachmentImporter(),
+        liveSelectionObserver: (any LiveSelectionObserving)? = nil,
         metrics: PerformanceMetrics? = nil
     ) {
+        let archive: ConversationArchive
+        let persistenceError: String?
+        do {
+            archive = try conversationPersistence.load()
+            persistenceError = nil
+        } catch {
+            archive = .empty
+            persistenceError = "Conversation history could not be loaded. The original archive was left unchanged."
+        }
+        let initialConversation = AgentConversation()
+        self.conversations = archive.conversations.isEmpty ? [initialConversation] : archive.conversations
+        self.activeConversationID = archive.activeConversationID.flatMap { candidate in
+            archive.conversations.contains(where: { $0.id == candidate }) ? candidate : nil
+        } ?? archive.conversations.first?.id ?? initialConversation.id
         self.contextCapturer = contextCapturer
         self.streamFactory = streamFactory
         self.settingsStore = settingsStore
         self.providerSession = providerSession
         self.clipboardManager = clipboardManager
+        self.conversationPersistence = conversationPersistence
+        self.attachmentImporter = attachmentImporter
+        self.liveSelectionObserver = liveSelectionObserver
+        self.conversationPersistenceEnabled = persistenceError == nil
+        self.persistenceStatus = persistenceError
+        self.responseDisplayID = nil
         self.metrics = metrics ?? PerformanceMetrics()
     }
 
     deinit {
         streamTask?.cancel()
+        liveContextTask?.cancel()
     }
 
     func beginInvocation() {
-        cancelTasks()
+        cancelAllTasks()
 
         let invocationID = UUID()
         activeInvocationID = invocationID
@@ -80,6 +116,9 @@ final class TaskCoordinator: ObservableObject {
         selectedAction = .explain
         userPrompt = ""
         contextGuidance = nil
+        retryRequest = nil
+        responseConversationID = nil
+        responseDisplayID = nil
         metrics.beginInvocation()
 
         // AX reads are intentionally short and synchronous. Finishing them in
@@ -87,6 +126,10 @@ final class TaskCoordinator: ObservableObject {
         // replacing the selection before capability and bounds are captured.
         let result = contextCapturer.captureContext(directInput: nil)
         finishCapture(result, invocationID: invocationID)
+        liveSelectionObserver?.start { [weak self] processID in
+            self?.refreshLiveContext(from: processID)
+        }
+        startLiveContextUpdates(invocationID: invocationID)
     }
 
     func selectAction(_ action: PromptAction) {
@@ -130,7 +173,7 @@ final class TaskCoordinator: ObservableObject {
         }
 
         let sensitiveContext = context.map {
-            $0.source == .clipboard
+            $0.source == .clipboard || $0.source == .selectionCopy
                 ? SensitiveTextDetector.containsSensitiveClipboardValue($0.text)
                 : SensitiveTextDetector.containsCredential(in: $0.text)
         } ?? false
@@ -143,43 +186,43 @@ final class TaskCoordinator: ObservableObject {
 
         let credentials: ProviderCredentials
         do {
-            do {
-                credentials = try providerSession.credentialsForRequest()
-            } catch ProviderSessionError.sessionClosed {
-                try providerSession.reopen()
-                credentials = try providerSession.credentialsForRequest()
-            }
+            credentials = try providerSession.credentialsForRequest()
         } catch {
             session.apply(.failed(Self.safeMessage(for: error)))
             return
         }
 
-        streamTask?.cancel()
-        session.apply(.streaming)
-        metrics.markRequestStarted()
-
+        cancelStreamTask()
+        let conversationID = activeConversationID
+        let history = AgentContextPolicy.historyForRequest(activeConversation?.messages ?? [])
+        let attachments = activeConversation?.attachments ?? []
+        let visibleUserMessage: String
+        if !normalizedPrompt.isEmpty {
+            visibleUserMessage = normalizedPrompt
+        } else if session.context != nil {
+            visibleUserMessage = "\(selectedAction.title) the selected context"
+        } else {
+            visibleUserMessage = selectedAction.title
+        }
+        appendMessage(.init(role: .user, content: visibleUserMessage), to: conversationID)
+        responseConversationID = conversationID
         let request = LLMRequest(
             action: selectedAction,
             context: context,
-            userPrompt: session.context == nil || normalizedPrompt.isEmpty ? nil : normalizedPrompt
+            userPrompt: session.context == nil || normalizedPrompt.isEmpty ? nil : normalizedPrompt,
+            history: history,
+            sessionID: conversationID,
+            userSystemPrompt: settingsStore.current.userSystemPrompt,
+            attachments: attachments
         )
-
-        streamTask = Task { [weak self, streamFactory] in
-            do {
-                for try await event in streamFactory(request, configuration, credentials) {
-                    guard !Task.isCancelled else { return }
-                    self?.receive(event, invocationID: invocationID)
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                guard !Task.isCancelled else { return }
-                self?.fail(
-                    Self.safeMessage(for: error, apiKey: credentials.apiKey ?? ""),
-                    invocationID: invocationID
-                )
-            }
-        }
+        retryRequest = request
+        userPrompt = ""
+        startStream(
+            request: request,
+            configuration: configuration,
+            credentials: credentials,
+            invocationID: invocationID
+        )
     }
 
     func submit(action: PromptAction, userPrompt: String) {
@@ -190,15 +233,121 @@ final class TaskCoordinator: ObservableObject {
 
     func toggleInvocation() {
         if hasActiveInvocation {
-            cancelAndDismiss()
+            // A repeated shortcut raises the persistent panel. Closing is an
+            // explicit Esc or close-button action. Refresh synchronously here
+            // so a just-selected range is visible without waiting for the
+            // background sampler's next short interval.
+            refreshLiveContext()
+            onPresentPanel?()
         } else {
             beginInvocation()
         }
     }
 
     func retry() {
-        guard session.phase == .failed else { return }
-        submit()
+        guard session.phase == .failed,
+              let request = retryRequest,
+              let invocationID = activeInvocationID,
+              let configuration = currentConfiguration
+        else { return }
+        do {
+            let credentials = try providerSession.credentialsForRequest()
+            responseConversationID = activeConversationID
+            startStream(
+                request: request,
+                configuration: configuration,
+                credentials: credentials,
+                invocationID: invocationID
+            )
+        } catch {
+            session.apply(.failed(Self.safeMessage(for: error)))
+        }
+    }
+
+    var activeConversation: AgentConversation? {
+        conversations.first(where: { $0.id == activeConversationID })
+    }
+
+    func newConversation() {
+        let synchronizedContext = refreshedSelectionContext() ?? session.context
+        cancelStreamTask()
+        let conversation = AgentConversation()
+        conversations.insert(conversation, at: 0)
+        activeConversationID = conversation.id
+        resetConversationSurface(with: synchronizedContext)
+        userPrompt = ""
+        attachmentStatus = nil
+        retryRequest = nil
+        responseDisplayID = nil
+        persistConversations()
+    }
+
+    func selectConversation(_ id: UUID) {
+        guard conversations.contains(where: { $0.id == id }) else { return }
+        let synchronizedContext = refreshedSelectionContext() ?? session.context
+        cancelStreamTask()
+        activeConversationID = id
+        resetConversationSurface(with: synchronizedContext)
+        userPrompt = ""
+        attachmentStatus = nil
+        retryRequest = nil
+        responseDisplayID = nil
+        persistConversations()
+    }
+
+    func deleteConversation(_ id: UUID) {
+        guard let index = conversations.firstIndex(where: { $0.id == id }) else { return }
+        let removed = conversations.remove(at: index)
+        for attachment in removed.attachments {
+            try? attachmentImporter.remove(attachment)
+        }
+        if conversations.isEmpty {
+            conversations = [AgentConversation()]
+        }
+        if activeConversationID == id {
+            activeConversationID = conversations[0].id
+        }
+        persistConversations()
+    }
+
+    func addAttachments(_ urls: [URL]) {
+        let conversationID = activeConversationID
+        let importer = attachmentImporter
+        attachmentStatus = "Importing \(urls.count) file\(urls.count == 1 ? "" : "s")…"
+        Task { [weak self] in
+            let results = await Task.detached {
+                urls.map { url -> Result<AgentAttachment, Error> in
+                    Result { try importer.importFile(at: url, conversationID: conversationID) }
+                }
+            }.value
+            guard let self, self.activeConversationID == conversationID else { return }
+            var imported = 0
+            var failures: [String] = []
+            for result in results {
+                switch result {
+                case let .success(attachment):
+                    self.addAttachment(attachment, to: conversationID)
+                    imported += 1
+                case let .failure(error):
+                    failures.append(error.localizedDescription)
+                }
+            }
+            if failures.isEmpty {
+                self.attachmentStatus = "Added \(imported) file\(imported == 1 ? "" : "s")."
+            } else {
+                self.attachmentStatus = failures.joined(separator: " ")
+            }
+        }
+    }
+
+    func removeAttachment(_ id: UUID) {
+        guard let conversationIndex = conversations.firstIndex(where: { $0.id == activeConversationID }),
+              let attachmentIndex = conversations[conversationIndex].attachments.firstIndex(where: { $0.id == id })
+        else { return }
+        let attachment = conversations[conversationIndex].attachments.remove(at: attachmentIndex)
+        try? attachmentImporter.remove(attachment)
+        conversations[conversationIndex].updatedAt = Date()
+        persistConversations()
     }
 
     func copyResponse() {
@@ -215,15 +364,17 @@ final class TaskCoordinator: ObservableObject {
         onDismissPanel?()
     }
 
-    /// Called by the AppKit panel when the user dismisses it through Esc,
-    /// click-away, or application termination.
+    /// Called when the user explicitly closes the panel or the app terminates.
     func cancelActiveRequest() {
         activeInvocationID = nil
-        cancelTasks()
+        cancelAllTasks()
         session = .idle
         session.apply(.cancelled)
         userPrompt = ""
         contextGuidance = nil
+        retryRequest = nil
+        responseConversationID = nil
+        responseDisplayID = nil
     }
 
     func panelDidDismiss() {
@@ -281,6 +432,72 @@ final class TaskCoordinator: ObservableObject {
         onPresentPanel?()
     }
 
+    /// While the panel remains open, keep its pending context aligned with a
+    /// selection the user makes in another application. The initial hot-key
+    /// capture still owns clipboard fallback; live refreshes are AX-only so a
+    /// background clipboard change can never silently replace the context.
+    private func startLiveContextUpdates(invocationID: UUID) {
+        liveContextTask?.cancel()
+        liveContextTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled, let self, self.activeInvocationID == invocationID else {
+                    return
+                }
+                self.refreshLiveContext()
+            }
+        }
+    }
+
+    private func refreshLiveContext(from processID: pid_t? = nil) {
+        guard session.phase != .streaming else { return }
+        if let context = refreshedSelectionContext(from: processID) {
+            guard context != session.context else { return }
+            session.apply(.contextCaptured(context))
+            contextGuidance = context.guidance
+            if selectedAction == .rewrite, !context.canReplaceSelection {
+                selectedAction = .explain
+            }
+            return
+        }
+
+        // A process-scoped observer reports selection changes from another
+        // application, including deselection. That is an explicit clear. The
+        // polling path has no such provenance, so it deliberately keeps the
+        // pending context when AX is merely unavailable or FloatDude owns focus.
+        guard processID != nil, session.context != nil else { return }
+        session.apply(.contextCaptured(nil))
+        contextGuidance = "No selection is active. Enter a prompt below."
+        if selectedAction == .rewrite {
+            selectedAction = .explain
+        }
+    }
+
+    private func refreshedSelectionContext(from processID: pid_t? = nil) -> CapturedContext? {
+        let result = if let processID {
+            contextCapturer.captureLiveSelection(from: processID)
+        } else {
+            contextCapturer.captureLiveSelection()
+        }
+        guard case let .captured(context)? = result else {
+            return nil
+        }
+        return context
+    }
+
+    private func resetConversationSurface(with context: CapturedContext?) {
+        session = .idle
+        session.apply(.contextCaptured(context))
+        if context == nil {
+            session.apply(.prompting)
+        } else {
+            contextGuidance = context?.guidance
+            if selectedAction == .rewrite, context?.canReplaceSelection != true {
+                selectedAction = .explain
+            }
+        }
+    }
+
     private func receive(_ event: LLMStreamEvent, invocationID: UUID) {
         guard activeInvocationID == invocationID, session.phase == .streaming else { return }
         switch event {
@@ -291,6 +508,17 @@ final class TaskCoordinator: ObservableObject {
             session.apply(.textDelta(delta))
         case .completed:
             session.apply(.completed)
+            if let responseConversationID, !session.response.isEmpty {
+                appendMessage(
+                    .init(
+                        id: responseDisplayID ?? UUID(),
+                        role: .assistant,
+                        content: session.response
+                    ),
+                    to: responseConversationID
+                )
+                self.responseConversationID = nil
+            }
         }
     }
 
@@ -303,9 +531,75 @@ final class TaskCoordinator: ObservableObject {
         session.apply(.failed(FloatDudeError.missingConfiguration.localizedDescription))
     }
 
-    private func cancelTasks() {
+    private func startStream(
+        request: LLMRequest,
+        configuration: LLMConfiguration,
+        credentials: ProviderCredentials,
+        invocationID: UUID
+    ) {
+        cancelStreamTask()
+        responseDisplayID = UUID()
+        session.apply(.streaming)
+        metrics.markRequestStarted()
+        streamTask = Task { [weak self, streamFactory] in
+            do {
+                for try await event in streamFactory(request, configuration, credentials) {
+                    guard !Task.isCancelled else { return }
+                    self?.receive(event, invocationID: invocationID)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.fail(
+                    Self.safeMessage(for: error, apiKey: credentials.apiKey ?? ""),
+                    invocationID: invocationID
+                )
+            }
+        }
+    }
+
+    private func appendMessage(_ message: AgentMessage, to conversationID: UUID) {
+        guard let index = conversations.firstIndex(where: { $0.id == conversationID }) else { return }
+        conversations[index].messages.append(message)
+        conversations[index].updatedAt = Date()
+        if conversations[index].title == "New conversation", message.role == .user {
+            let normalized = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            conversations[index].title = String(normalized.prefix(48))
+        }
+        conversations.sort { $0.updatedAt > $1.updatedAt }
+        persistConversations()
+    }
+
+    private func addAttachment(_ attachment: AgentAttachment, to conversationID: UUID) {
+        guard let index = conversations.firstIndex(where: { $0.id == conversationID }) else { return }
+        conversations[index].attachments.append(attachment)
+        conversations[index].updatedAt = Date()
+        persistConversations()
+    }
+
+    private func persistConversations() {
+        guard conversationPersistenceEnabled else { return }
+        do {
+            try conversationPersistence.save(ConversationArchive(
+                activeConversationID: activeConversationID,
+                conversations: conversations
+            ))
+        } catch {
+            persistenceStatus = "Conversation history could not be saved."
+        }
+    }
+
+    private func cancelStreamTask() {
         streamTask?.cancel()
         streamTask = nil
+    }
+
+    private func cancelAllTasks() {
+        cancelStreamTask()
+        liveContextTask?.cancel()
+        liveContextTask = nil
+        liveSelectionObserver?.stop()
     }
 
     private static func safeMessage(for error: Error, apiKey: String? = nil) -> String {

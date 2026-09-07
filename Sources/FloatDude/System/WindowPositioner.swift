@@ -33,6 +33,46 @@ struct DisplayGeometry: Sendable, Equatable {
     }
 }
 
+/// The FloatDude panel adopts the iPhone 17 Pro Max design canvas as its
+/// largest desktop footprint. At 1080p and above that is the actual maximum;
+/// smaller displays scale the entire requested canvas proportionally before it
+/// is clamped to the usable desktop frame.
+struct PanelSizePolicy: Sendable {
+    static let iPhone17ProMaxCanvas = CGSize(width: 440, height: 956)
+    static let referenceDisplayHeight: CGFloat = 1_080
+
+    static func displayScale(for displayFrame: CGRect) -> CGFloat {
+        guard displayFrame.height.isFinite, displayFrame.height > 0 else { return 1 }
+        return min(1, max(0.1, displayFrame.height / referenceDisplayHeight))
+    }
+
+    static func maximumSize(for displayFrame: CGRect) -> CGSize {
+        let scale = displayScale(for: displayFrame)
+        return CGSize(
+            width: iPhone17ProMaxCanvas.width * scale,
+            height: iPhone17ProMaxCanvas.height * scale
+        )
+    }
+
+    static func fittedPanelSize(
+        _ requestedSize: CGSize,
+        displayFrame: CGRect,
+        visibleFrame: CGRect,
+        edgeInset: CGFloat
+    ) -> CGSize {
+        let maximum = maximumSize(for: displayFrame)
+        let capped = CGSize(
+            width: min(requestedSize.width, maximum.width),
+            height: min(requestedSize.height, maximum.height)
+        )
+        return WindowPlacementCalculator.fittedPanelSize(
+            capped,
+            in: visibleFrame,
+            edgeInset: edgeInset
+        )
+    }
+}
+
 /// Pure geometry used by `WindowPositioner` and deterministic unit tests.
 struct WindowPlacementCalculator: Sendable {
     static let defaultEdgeInset: CGFloat = 12
@@ -219,15 +259,23 @@ struct WindowPositioner: WindowPositioning {
     func fittedPanelSize(for size: CGSize, avoiding rect: CGRect?) -> CGSize {
         let displays = displayGeometries
         let selectionDisplay = rect.flatMap { selection in
-            displays.first(where: { $0.frame.intersects(selection) })
+            displays.max { lhs, rhs in
+                let left = lhs.frame.intersection(selection)
+                let right = rhs.frame.intersection(selection)
+                let leftArea = left.isNull ? 0 : left.width * left.height
+                let rightArea = right.isNull ? 0 : right.width * right.height
+                return leftArea < rightArea
+            }
         }
         let display = WindowPlacementCalculator.activeDisplay(
             for: NSEvent.mouseLocation,
             in: displays
         )
-        return WindowPlacementCalculator.fittedPanelSize(
+        let targetDisplay = selectionDisplay ?? display
+        return PanelSizePolicy.fittedPanelSize(
             size,
-            in: (selectionDisplay ?? display).visibleFrame,
+            displayFrame: targetDisplay.frame,
+            visibleFrame: targetDisplay.visibleFrame,
             edgeInset: edgeInset
         )
     }

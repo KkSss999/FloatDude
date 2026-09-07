@@ -30,6 +30,28 @@ struct LLMRequest: Sendable, Equatable {
     let action: PromptAction
     let context: CapturedContext?
     let userPrompt: String?
+    let history: [AgentMessage]
+    let sessionID: UUID
+    let userSystemPrompt: String
+    let attachments: [AgentAttachment]
+
+    init(
+        action: PromptAction,
+        context: CapturedContext?,
+        userPrompt: String?,
+        history: [AgentMessage] = [],
+        sessionID: UUID = UUID(),
+        userSystemPrompt: String = "",
+        attachments: [AgentAttachment] = []
+    ) {
+        self.action = action
+        self.context = context
+        self.userPrompt = userPrompt
+        self.history = history
+        self.sessionID = sessionID
+        self.userSystemPrompt = userSystemPrompt
+        self.attachments = attachments
+    }
 }
 
 enum LLMStreamEvent: Sendable, Equatable {

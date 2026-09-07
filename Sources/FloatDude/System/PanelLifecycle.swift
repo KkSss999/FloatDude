@@ -47,13 +47,15 @@ final class PanelLifecycle {
         switch event {
         case .shortcut:
             if isPresented {
-                return cancelAndDismiss(reason: .repeatedShortcut)
+                return false
             }
             return present()
         case .escape:
             return cancelAndDismiss(reason: .escape)
         case .clickAway:
-            return cancelAndDismiss(reason: .clickAway)
+            // The agent panel remains available while the user works in other
+            // apps. Only explicit close paths dismiss it.
+            return false
         case .terminate:
             return cancelAndDismiss(reason: .terminate)
         case .dismiss:

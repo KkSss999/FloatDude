@@ -6,6 +6,9 @@
 - `swift test` passes.
 - `xcodebuild -project FloatDude.xcodeproj -scheme FloatDude -destination 'platform=macOS' build` succeeds under full Xcode.
 - The same Xcode scheme runs the XCTest suite with `xcodebuild ... test`.
+- `bash Scripts/install-local-app.sh` replaces the installed bundle, removes
+  other local FloatDude app copies/links, unregisters their Launch Services
+  records, and verifies `/Applications/FloatDude.app` is the only registered path.
 - Add deterministic unit tests for prompt construction, SSE framing/decoding, URL normalization, settings serialization, and Keychain error mapping.
 - Add UI or integration coverage for state transitions: idle → panel → streaming → completed/cancelled/error.
 
@@ -29,7 +32,9 @@ close FloatDude Settings. Dismissal clears task content but preserves session ke
 | Selected text available | Preview contains the selected text, labels its source, and anchors the panel beside the selection rather than a distant pointer |
 | Accessibility denied | Clear non-blocking permission guidance, then clipboard or input fallback |
 | `Esc` during streaming | Panel closes and cancels the request |
-| Click outside the panel | Key panel dismisses without retaining sensitive context in visible UI |
+| Click outside the panel | Panel remains visible and above normal windows without stealing focus |
+| Repeated shortcut | Existing panel is raised without cancelling the turn or changing a user-moved position |
+| Display/Space change | Full panel frame is constrained into the active visible frame and remains available |
 | Drag panel background | Panel moves freely; response expansion preserves the dragged top anchor |
 | Missing/invalid credential | Human-readable error exposes a working Settings button; legacy default DeepSeek/NoAuth state migrates to Session Only |
 | Open Settings before first hotkey | Menu-bar Settings opens a populated window at least 520×480 pt without requiring a prior panel invocation or restoring a stale zero-sized frame |
@@ -37,6 +42,11 @@ close FloatDude Settings. Dismissal clears task content but preserves session ke
 | Accessibility unavailable | Settings shows live permission status and user-triggered Request Access/Open System Settings actions; the panel explains any clipboard fallback |
 | Apply credentials from clipboard | Matching API-key clipboard content is cleared; unrelated clipboard content is preserved |
 | Copy response | Pasteboard receives exactly the final visible response |
+| Multi-turn conversation | Second provider request contains ordered prior user/assistant turns and the same conversation ID |
+| Attachment import | PDF/Markdown/text/Word/XLSX/CSV/TSV is copied into the active conversation after extraction validation |
+| Agent tools | Provider sees exactly read/write; read cannot escape active attachments and write cannot escape managed `.md`/`.txt` exports |
+| Model test | Settings GETs `/v1/models` with the selected credential mode and reports the model count without exposing the key |
+| Launch at login | Settings reflects `SMAppService.mainApp` status and register/unregister errors remain actionable |
 | Invalid endpoint/key | Human-readable error; key and Authorization header never rendered or logged |
 | Credential modes | No Authentication sends no header; Session Only survives panel dismissal but not app relaunch; Remember on This Mac is Keychain-only |
 | Stream termination | `[DONE]` or `message_stop` completes; an early EOF is reported as an error |

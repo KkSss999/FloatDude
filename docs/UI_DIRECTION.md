@@ -15,7 +15,7 @@ These images establish material, hierarchy, and tone—not pixel-perfect copy, i
 
 > **Adaptive Glass, One-Breath Motion.**
 
-FloatDude should feel like a small piece of macOS material briefly rising above the user’s work. It appears near the cursor, handles one request, and leaves. It must never read as a permanent chat client, dashboard, or secondary workspace.
+FloatDude should feel like a small piece of macOS material beside the user’s work. It appears near the active context and remains available until explicitly closed. Multi-turn history stays in one focused surface with direct scroll navigation; it must never grow into a dashboard or secondary workspace.
 
 ## Appearance contract
 
@@ -38,13 +38,13 @@ The visual references suggest an upper bubble and a response sheet. The implemen
 
 | State | Target size | Required content |
 | --- | --- | --- |
-| No context | 400 pt wide; 132–176 pt high | Brand mark, `Ask FloatDude…`, action row |
-| Context captured | 400 pt wide; 196–236 pt high | Two-line selected-text preview, actions, ask field |
-| Streaming/completed | 400 pt wide; grows to 420 pt high | Existing context/action area, response, Copy |
-| Long response | 400 pt wide; 420 pt max | Response becomes internally scrollable; panel never grows further |
-| Error | 400 pt wide; 196–260 pt high | Actionable error, retry, and Settings path when relevant |
+| No context | Responsive canvas; starts at content height | Brand mark, `Ask FloatDude…`, action row |
+| Context captured | Responsive canvas; includes selected-text preview | Two-line selected-text preview, actions, ask field |
+| Streaming/completed | Grows with the active transcript | Existing context/action area, Markdown response, Copy |
+| Long response/history | Max 440 × 956 pt at 1080p+ | One scroll surface, jump-to-latest control, conversation map |
+| Error | Responsive canvas; stays scrollable | Actionable error, retry, and Settings path when relevant |
 
-- Permit a width range of 336–456 pt for small displays and accessibility text sizes.
+- The maximum design canvas is the [iPhone 17 Pro Max](https://developer.apple.com/design/human-interface-guidelines/layout?changes=_____7&language=objc): 440 × 956 pt. At a 1080p display height and above it can reach that size; below 1080p, width and height scale together before the visible-frame clamp.
 - When Accessibility provides selection bounds, anchor the panel to that selection: below first, then above or beside it without covering the text. Fall back to the pointer only when selection geometry is unavailable. Keep the panel fully on the active display.
 - Use the valid selection's display and a fixed below/above/right/left candidate order. Reject invalid or off-screen bounds before pointer fallback.
 - Truncate previews after two lines; preserve the complete captured text for the model request, not for visible UI.
@@ -56,7 +56,8 @@ The visual references suggest an upper bubble and a response sheet. The implemen
 2. With captured text, tapping `Explain` or `Translate` starts that action immediately. Show `Rewrite` only when `AXSelectedText` is settable on the captured element.
 3. `Ask anything…` always dispatches the Ask action, not whichever quick action was last selected.
 4. On first output token, the same panel grows downward and renders native Markdown.
-5. `Copy` copies only final visible response text. `Esc`, click-away, or a repeated shortcut cancels active streaming and dismisses the panel.
+5. A shortcut reopens the last active conversation and positions its scroll view at the newest turn. A new selection can update the pending context while the nonactivating panel is open; creating or switching a conversation carries that current selection into the pending turn.
+6. `Copy` copies only final visible response text. `Esc` and the close button dismiss; click-away keeps the panel visible and a repeated shortcut raises it in place.
 
 ## Motion and restraint
 
@@ -69,9 +70,9 @@ The visual references suggest an upper bubble and a response sheet. The implemen
 ## Non-negotiable exclusions
 
 - No persistent two-panel layout.
-- No large initial window, sidebar, tabs, history list, avatars, chat bubbles, or dashboard cards.
+- No separate large window, sidebar, tabs, avatars, chat bubbles, or dashboard cards; session switching stays in the compact header menu and the in-surface conversation map.
 - No hard-coded dark theme, black glass, thick borders, or decorative gradients.
-- No stored selected text or answer history in v0.1.
+- No stored selected text. Only typed user turns, assistant answers, and explicitly attached-file metadata enter local conversation history.
 
 ## Design acceptance
 
@@ -99,8 +100,23 @@ sit directly on the surface below a hairline separator, without a second card
 or repeated status headings. The close control is an actual accessible button. The title strip has an
 explicit AppKit drag region, separate from close, selection and input controls;
 its mouse events move the same NSPanel without routing through the ScrollView.
-An outer scroll region keeps recovery guidance and controls reachable within
-the bounded panel; long answers also scroll within their response region.
+One outer scroll region contains the complete active conversation and the prompt.
+On entering a conversation it lands at the latest turn. A lower-right button
+returns there after manual scrolling; a quiet left-side tick rail stays compact
+at rest, expands on hover to show excerpts, and scrolls directly to a chosen
+**user** message. Assistant replies do not create ticks. Long answers therefore
+remain reachable without nested response scroll areas.
+
+The title strip is fixed above this scroll surface. Its AppKit drag target is
+therefore present during every state, including a long conversation positioned
+at the newest message. Streaming and completed answers are assistant entries in
+the same transcript; do not introduce a second response panel or a separate
+answer-specific scroll region.
+
+For Feishu's Electron/Chromium-style message renderer, if Accessibility does not
+expose `AXSelectedText`, the UI labels context as a shortcut snapshot. It is a
+one-time capture at invocation, not a live selection feed; do not imply otherwise
+in product copy or status text.
 
 Reduce Transparency switches to opaque system colors. Increase Contrast adds a
 stronger outer boundary and input edges. Native window resizing now observes

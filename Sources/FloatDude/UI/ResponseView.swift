@@ -329,7 +329,7 @@ enum MarkdownDocument {
     }
 }
 
-private struct MarkdownResponse: View {
+struct MarkdownResponse: View {
     let blocks: [MarkdownBlock]
 
     init(text: String) {

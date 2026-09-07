@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The one-shot prompt surface. It deliberately owns no networking or context
 /// persistence; a coordinator supplies the action and submit closures.
@@ -12,25 +13,34 @@ struct PromptView: View {
     let selectedText: String
     let selectedSource: CapturedContext.Source?
     let canRewriteSelection: Bool
+    let attachments: [AgentAttachment]
+    let attachmentStatus: String?
     let contextGuidance: String?
     let isDisabled: Bool
     let onAction: ((PromptAction) -> Void)?
     let onSubmit: ((PromptAction, String) -> Void)?
     let onCancel: (() -> Void)?
+    let onAddAttachments: (([URL]) -> Void)?
+    let onRemoveAttachment: ((UUID) -> Void)?
     let onOpenAccessibilitySettings: (() -> Void)?
     @FocusState private var isPromptFocused: Bool
+    @State private var isFileImporterPresented = false
 
     init(
         prompt: Binding<String>,
         selectedText: String = "",
         selectedSource: CapturedContext.Source? = nil,
         canRewriteSelection: Bool = false,
+        attachments: [AgentAttachment] = [],
+        attachmentStatus: String? = nil,
         contextGuidance: String? = nil,
         selectedAction: Binding<PromptAction> = .constant(.ask),
         isDisabled: Bool = false,
         onAction: ((PromptAction) -> Void)? = nil,
         onSubmit: ((PromptAction, String) -> Void)? = nil,
         onCancel: (() -> Void)? = nil,
+        onAddAttachments: (([URL]) -> Void)? = nil,
+        onRemoveAttachment: ((UUID) -> Void)? = nil,
         onOpenAccessibilitySettings: (() -> Void)? = nil
     ) {
         self._prompt = prompt
@@ -38,11 +48,15 @@ struct PromptView: View {
         self.selectedText = selectedText
         self.selectedSource = selectedSource
         self.canRewriteSelection = canRewriteSelection
+        self.attachments = attachments
+        self.attachmentStatus = attachmentStatus
         self.contextGuidance = contextGuidance
         self.isDisabled = isDisabled
         self.onAction = onAction
         self.onSubmit = onSubmit
         self.onCancel = onCancel
+        self.onAddAttachments = onAddAttachments
+        self.onRemoveAttachment = onRemoveAttachment
         self.onOpenAccessibilitySettings = onOpenAccessibilitySettings
     }
 
@@ -51,12 +65,24 @@ struct PromptView: View {
             if !selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || contextGuidance != nil {
                 selectedContext
             }
+            if !attachments.isEmpty || attachmentStatus != nil {
+                attachmentShelf
+            }
             promptEditor
             actionPicker
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.78 : 1)
+        .fileImporter(
+            isPresented: $isFileImporterPresented,
+            allowedContentTypes: Self.allowedAttachmentTypes,
+            allowsMultipleSelection: true
+        ) { result in
+            if case let .success(urls) = result {
+                onAddAttachments?(urls)
+            }
+        }
     }
 
     private var selectedContext: some View {
@@ -146,6 +172,17 @@ struct PromptView: View {
 
     private var promptEditor: some View {
         HStack(spacing: 8) {
+            Button {
+                isFileImporterPresented = true
+            } label: {
+                Image(systemName: "paperclip")
+                    .font(.system(size: 13, weight: .medium))
+                    .frame(width: 24, height: 28)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .help("Attach PDF, Markdown, Word, or spreadsheet")
+
             TextField("Ask FloatDude…", text: $prompt, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
@@ -179,6 +216,62 @@ struct PromptView: View {
             }
         }
     }
+
+    private var attachmentShelf: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ScrollView(.horizontal) {
+                HStack(spacing: 6) {
+                    ForEach(attachments) { attachment in
+                        HStack(spacing: 5) {
+                            Image(systemName: attachmentSymbol(attachment.kind))
+                            Text(attachment.displayName).lineLimit(1)
+                            Button {
+                                onRemoveAttachment?(attachment.id)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Remove \(attachment.displayName)")
+                        }
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .glassInset(cornerRadius: 9)
+                    }
+                }
+            }
+            .scrollIndicators(.hidden)
+            if let attachmentStatus {
+                Text(attachmentStatus)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func attachmentSymbol(_ kind: AgentAttachmentKind) -> String {
+        switch kind {
+        case .pdf: "doc.richtext"
+        case .markdown, .text: "doc.text"
+        case .word: "doc"
+        case .spreadsheet: "tablecells"
+        }
+    }
+
+    private static let allowedAttachmentTypes: [UTType] = [
+        .pdf,
+        .plainText,
+        .commaSeparatedText,
+        .tabSeparatedText,
+        UTType(filenameExtension: "md"),
+        UTType(filenameExtension: "markdown"),
+        UTType(filenameExtension: "doc"),
+        UTType(filenameExtension: "docx"),
+        UTType(filenameExtension: "rtf"),
+        UTType(filenameExtension: "rtfd"),
+        UTType(filenameExtension: "odt"),
+        UTType(filenameExtension: "xlsx"),
+    ].compactMap { $0 }
 
     private func submitAsk() {
         let normalizedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
