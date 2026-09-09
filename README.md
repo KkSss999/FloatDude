@@ -6,7 +6,7 @@
 
 An AI dude that pops up wherever you need it on your Mac.
 
-[English](README.md) · [简体中文](README.zh-CN.md)
+[English](README.md) · [Chinese](README.zh-CN.md)
 
 </div>
 
@@ -145,7 +145,7 @@ Before submitting code, run the local validation commands above and confirm that
 
 ## Author
 
-FloatDude was conceived, designed, and built by **Kerye (凯毅)** — [@KkSss999](https://github.com/KkSss999).
+FloatDude was conceived, designed, and built by **Kerye Gwent** — [@KkSss999](https://github.com/KkSss999).
 
 It is both an open-source macOS utility and an exploration of how AI can feel native, temporary, and respectful of the user's current context.
 
