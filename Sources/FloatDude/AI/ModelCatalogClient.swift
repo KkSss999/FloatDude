@@ -11,13 +11,7 @@ struct ModelCatalogClient: Sendable {
         configuration: LLMConfiguration,
         credentials: ProviderCredentials
     ) async throws -> [String] {
-        let base = try LLMEndpoint.normalizedBaseURL(configuration.baseURL)
-        let url: URL
-        if base.path.hasSuffix("/v1") {
-            url = base.appendingPathComponent("models")
-        } else {
-            url = base.appendingPathComponent("v1").appendingPathComponent("models")
-        }
+        let url = try LLMEndpoint.modelsURL(for: configuration.baseURL)
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -51,7 +45,7 @@ struct ModelCatalogClient: Sendable {
         }
         let ids = Self.modelIDs(from: data)
         guard !ids.isEmpty else {
-            throw AgentEngineError.modelCatalogUnavailable("The provider connected, but /models returned no model IDs.")
+            throw AgentEngineError.modelCatalogUnavailable("The provider connected, but /v1/models returned no model IDs.")
         }
         return ids.sorted()
     }
@@ -62,6 +56,15 @@ struct ModelCatalogClient: Sendable {
             ?? (object["models"] as? [[String: Any]])
             ?? []
         return candidates.compactMap { ($0["id"] ?? $0["name"]) as? String }
+    }
+
+    static func isOptionalCatalogEndpointUnavailable(_ error: Error) -> Bool {
+        guard let agentError = error as? AgentEngineError,
+              case let .modelCatalogUnavailable(message) = agentError
+        else {
+            return false
+        }
+        return message.contains("HTTP 404")
     }
 
     private static func providerMessage(from data: Data) -> String {

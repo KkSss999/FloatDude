@@ -6,15 +6,18 @@ import SwiftUI
 @MainActor
 struct TaskPanelView: View {
     @ObservedObject var coordinator: TaskCoordinator
+    @ObservedObject var settingsStore: SettingsStore
     let onStateChange: (FloatingPanelState) -> Void
     let onContentHeightChange: (CGFloat) -> Void
 
     init(
         coordinator: TaskCoordinator,
+        settingsStore: SettingsStore,
         onStateChange: @escaping (FloatingPanelState) -> Void = { _ in },
         onContentHeightChange: @escaping (CGFloat) -> Void = { _ in }
     ) {
         self.coordinator = coordinator
+        self.settingsStore = settingsStore
         self.onStateChange = onStateChange
         self.onContentHeightChange = onContentHeightChange
     }
@@ -26,6 +29,7 @@ struct TaskPanelView: View {
                 set: { _ in }
             ),
             prompt: $coordinator.userPrompt,
+            language: settingsStore.current.settingsLanguage,
             selectedText: coordinator.session.context?.text ?? "",
             selectedSource: coordinator.session.context?.source,
             canRewriteSelection: coordinator.session.context?.canReplaceSelection ?? false,

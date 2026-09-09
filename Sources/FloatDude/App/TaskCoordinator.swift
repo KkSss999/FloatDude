@@ -196,13 +196,14 @@ final class TaskCoordinator: ObservableObject {
         let conversationID = activeConversationID
         let history = AgentContextPolicy.historyForRequest(activeConversation?.messages ?? [])
         let attachments = activeConversation?.attachments ?? []
+        let actionTitle = selectedAction.title(in: settingsStore.current.settingsLanguage)
         let visibleUserMessage: String
         if !normalizedPrompt.isEmpty {
             visibleUserMessage = normalizedPrompt
         } else if session.context != nil {
-            visibleUserMessage = "\(selectedAction.title) the selected context"
+            visibleUserMessage = "\(actionTitle) \(settingsStore.current.settingsLanguage == .simplifiedChinese ? "选中的内容" : "the selected context")"
         } else {
-            visibleUserMessage = selectedAction.title
+            visibleUserMessage = actionTitle
         }
         appendMessage(.init(role: .user, content: visibleUserMessage), to: conversationID)
         responseConversationID = conversationID
@@ -237,7 +238,7 @@ final class TaskCoordinator: ObservableObject {
             // explicit Esc or close-button action. Refresh synchronously here
             // so a just-selected range is visible without waiting for the
             // background sampler's next short interval.
-            refreshLiveContext()
+            refreshShortcutContext()
             onPresentPanel?()
         } else {
             beginInvocation()
@@ -470,6 +471,31 @@ final class TaskCoordinator: ObservableObject {
         contextGuidance = "No selection is active. Enter a prompt below."
         if selectedAction == .rewrite {
             selectedAction = .explain
+        }
+    }
+
+    private func refreshShortcutContext() {
+        guard session.phase != .streaming,
+              let result = contextCapturer.captureShortcutSelection()
+        else { return }
+        switch result {
+        case let .captured(context):
+            guard context != session.context else { return }
+            session.apply(.contextCaptured(context))
+            contextGuidance = context.guidance
+            if selectedAction == .rewrite, !context.canReplaceSelection {
+                selectedAction = .explain
+            }
+        case .unavailable:
+            guard session.context != nil else { return }
+            session.apply(.contextCaptured(nil))
+            contextGuidance = "No selection is active. Enter a prompt below."
+            if selectedAction == .rewrite {
+                selectedAction = .explain
+            }
+        case let .rejected(error):
+            contextGuidance = nil
+            session.apply(.failed(error.localizedDescription))
         }
     }
 

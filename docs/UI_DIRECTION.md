@@ -115,8 +115,8 @@ answer-specific scroll region.
 
 For Feishu's Electron/Chromium-style message renderer, if Accessibility does not
 expose `AXSelectedText`, the UI labels context as a shortcut snapshot. It is a
-one-time capture at invocation, not a live selection feed; do not imply otherwise
-in product copy or status text.
+one-time capture at invocation, not a live selection feed. Other supported
+applications continue to use system-wide AX focus for live selection updates.
 
 Reduce Transparency switches to opaque system colors. Increase Contrast adds a
 stronger outer boundary and input edges. Native window resizing now observes

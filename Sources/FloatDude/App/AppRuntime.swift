@@ -137,7 +137,10 @@ final class AppRuntime: ObservableObject {
                 settingsStore: settingsStore,
                 providerSession: providerSession,
                 hotkeyManager: hotkeyManager,
-                clipboardManager: clipboardManager
+                clipboardManager: clipboardManager,
+                onCredentialsApplied: { [weak self] in
+                    self?.clearCredentialStartupError()
+                }
             )
             settingsWindowController = controller
         }
@@ -179,6 +182,11 @@ final class AppRuntime: ObservableObject {
         }
     }
 
+    private func clearCredentialStartupError() {
+        guard startupError?.hasPrefix("The remembered API key") == true else { return }
+        startupError = nil
+    }
+
     private func presentPanel() {
         settingsWindowController?.window?.orderOut(nil)
         if !panelController.isPresented {
@@ -186,6 +194,7 @@ final class AppRuntime: ObservableObject {
         }
         let view = TaskPanelView(
             coordinator: coordinator,
+            settingsStore: settingsStore,
             onStateChange: { [weak self] state in
                 self?.resizePanel(for: state)
             },

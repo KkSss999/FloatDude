@@ -2,8 +2,8 @@ import AppKit
 import SwiftUI
 
 private enum SettingsTextKey: Hashable {
-    case displayLanguage, provider, endpointURL, model, credentialMode, apiKey
-    case rememberKey, applyCredentials, deleteRememberedKey, testing, testModels
+    case displayLanguage, provider, endpointURL, model, credentialMode, apiKey, apiKeyConfigured
+    case rememberKey, applyCredentials, deleteRememberedKey, testing, testModels, modelsUnavailable
     case agentInstructions, instructionsPlaceholder, instructionsHelp
     case background, launchAtLogin, backgroundHelp, openLoginItems
     case shortcut, shortcutDescriptor, shortcutHelp
@@ -35,9 +35,10 @@ private struct SettingsCopy {
 
     private static let english: [SettingsTextKey: String] = [
         .displayLanguage: "Display language", .provider: "Provider", .endpointURL: "Endpoint URL",
-        .model: "Model", .credentialMode: "Credential mode", .apiKey: "API key",
+        .model: "Model", .credentialMode: "Credential mode", .apiKey: "API key", .apiKeyConfigured: "Configured",
         .rememberKey: "Remember this API key on this Mac", .applyCredentials: "Apply Credentials",
-        .deleteRememberedKey: "Delete Remembered Key", .testing: "Testing…", .testModels: "Test /models",
+        .deleteRememberedKey: "Delete Remembered Key", .testing: "Testing…", .testModels: "Test /v1/models",
+        .modelsUnavailable: "The provider returned 404 for /v1/models. This optional catalog endpoint is unavailable; the configured model can still be used.",
         .agentInstructions: "Agent Instructions",
         .instructionsPlaceholder: "Optional instructions for tone, language, output format, and working preferences…",
         .instructionsHelp: "These instructions are appended after FloatDude's protected software policy and reused across conversation turns.",
@@ -62,9 +63,10 @@ private struct SettingsCopy {
 
     private static let simplifiedChinese: [SettingsTextKey: String] = [
         .displayLanguage: "显示语言", .provider: "模型服务", .endpointURL: "接口地址",
-        .model: "模型", .credentialMode: "凭据模式", .apiKey: "API 密钥",
+        .model: "模型", .credentialMode: "凭据模式", .apiKey: "API 密钥", .apiKeyConfigured: "已配置",
         .rememberKey: "在此 Mac 记住此 API 密钥", .applyCredentials: "应用凭据",
-        .deleteRememberedKey: "删除已记住的密钥", .testing: "测试中…", .testModels: "测试 /models",
+        .deleteRememberedKey: "删除已记住的密钥", .testing: "测试中…", .testModels: "测试 /v1/models",
+        .modelsUnavailable: "服务商对 /v1/models 返回了 404。该可选模型目录不可用，但不影响已配置模型继续使用。",
         .agentInstructions: "Agent 指令",
         .instructionsPlaceholder: "可选：定义语气、语言、输出格式和工作偏好…",
         .instructionsHelp: "这些指令会追加在 FloatDude 受保护的软件策略之后，并在后续会话轮次中复用。",
@@ -98,6 +100,7 @@ struct SettingsView: View {
     private let clipboardManager: any ClipboardManaging
     private let backgroundManager: any BackgroundServiceManaging
     private let modelCatalogClient: ModelCatalogClient
+    private let onCredentialsApplied: () -> Void
 
     @State private var endpoint: String
     @State private var model: String
@@ -112,6 +115,7 @@ struct SettingsView: View {
     @State private var accessibilityGranted: Bool
     @State private var statusMessage: String?
     @State private var statusIsError = false
+    @State private var statusIsWarning = false
     @State private var isTestingConnection = false
 
     init(
@@ -120,7 +124,8 @@ struct SettingsView: View {
         hotkeyManager: (any GlobalHotkeyManaging)? = nil,
         clipboardManager: any ClipboardManaging = ClipboardManager(),
         backgroundManager: (any BackgroundServiceManaging)? = nil,
-        modelCatalogClient: ModelCatalogClient = ModelCatalogClient()
+        modelCatalogClient: ModelCatalogClient = ModelCatalogClient(),
+        onCredentialsApplied: @escaping () -> Void = {}
     ) {
         self.settingsStore = settingsStore
         self.providerSession = providerSession
@@ -128,6 +133,7 @@ struct SettingsView: View {
         self.clipboardManager = clipboardManager
         self.backgroundManager = backgroundManager ?? BackgroundServiceManager()
         self.modelCatalogClient = modelCatalogClient
+        self.onCredentialsApplied = onCredentialsApplied
         let settings = settingsStore.current
         _endpoint = State(initialValue: settings.baseURL?.absoluteString ?? "")
         _model = State(initialValue: settings.model)
@@ -277,8 +283,8 @@ struct SettingsView: View {
                 Button(copy.text(.save), action: saveSettings)
                     .keyboardShortcut(.defaultAction)
                 if let statusMessage {
-                    Label(statusMessage, systemImage: statusIsError ? "exclamationmark.triangle" : "checkmark.circle")
-                        .foregroundStyle(statusIsError ? .red : .green)
+                    Label(statusMessage, systemImage: statusSymbol)
+                        .foregroundStyle(statusColor)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -312,7 +318,7 @@ struct SettingsView: View {
             ZStack(alignment: .leading) {
                 SecureField("", text: $apiKey)
                     .accessibilityLabel(copy.text(.apiKey))
-                    .accessibilityValue(hasConfiguredAPIKey ? "Configured" : "")
+                    .accessibilityValue(hasConfiguredAPIKey ? copy.text(.apiKeyConfigured) : "")
                 if apiKey.isEmpty, hasConfiguredAPIKey {
                     // A fixed number of bullets communicates presence without
                     // exposing any secret material or its actual length.
@@ -381,6 +387,7 @@ struct SettingsView: View {
                 launchAtLogin: launchAtLogin,
                 settingsLanguage: settingsLanguage
             ))
+            onCredentialsApplied()
             showSuccess(copy.text(.saved))
         } catch let error as SettingsValidationError {
             showError(localizedValidationMessage(error))
@@ -403,6 +410,7 @@ struct SettingsView: View {
             var settings = settingsStore.current
             settings.credentialMode = credentialMode
             settingsStore.save(settings)
+            onCredentialsApplied()
             showSuccess(copy.text(.credentialsApplied))
         } catch let error as ProviderSessionError {
             showError(error.localizedDescription)
@@ -468,6 +476,8 @@ struct SettingsView: View {
                     credentials: credentials
                 )
                 showSuccess(copy.connectedModels(models.count))
+            } catch where ModelCatalogClient.isOptionalCatalogEndpointUnavailable(error) {
+                showWarning(copy.text(.modelsUnavailable))
             } catch {
                 showError(LLMSecretRedactor.redact(error.localizedDescription, apiKey: apiKey))
             }
@@ -477,12 +487,28 @@ struct SettingsView: View {
 
     private func showSuccess(_ message: String) {
         statusIsError = false
+        statusIsWarning = false
         statusMessage = message
     }
 
     private func showError(_ message: String) {
         statusIsError = true
+        statusIsWarning = false
         statusMessage = message
+    }
+
+    private func showWarning(_ message: String) {
+        statusIsError = false
+        statusIsWarning = true
+        statusMessage = message
+    }
+
+    private var statusSymbol: String {
+        statusIsError ? "exclamationmark.triangle" : (statusIsWarning ? "info.circle" : "checkmark.circle")
+    }
+
+    private var statusColor: Color {
+        statusIsError ? .red : (statusIsWarning ? .orange : .green)
     }
 
     private func localizedValidationMessage(_ error: SettingsValidationError) -> String {
@@ -516,13 +542,15 @@ final class SettingsWindowController: NSWindowController, NSWindowDelegate {
         settingsStore: any SettingsStoring,
         providerSession: any ProviderSessionManaging,
         hotkeyManager: (any GlobalHotkeyManaging)? = nil,
-        clipboardManager: any ClipboardManaging = ClipboardManager()
+        clipboardManager: any ClipboardManaging = ClipboardManager(),
+        onCredentialsApplied: @escaping () -> Void = {}
     ) {
         let view = SettingsView(
             settingsStore: settingsStore,
             providerSession: providerSession,
             hotkeyManager: hotkeyManager,
-            clipboardManager: clipboardManager
+            clipboardManager: clipboardManager,
+            onCredentialsApplied: onCredentialsApplied
         )
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 520),

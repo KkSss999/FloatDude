@@ -7,8 +7,8 @@ script uses the same FloatingPanel views, but is not the installed product.
 - Bundle identifier: `com.kks999.FloatDude`; version: 0.1.0 (1).
 - Release build succeeded; strict code-signature verification succeeded.
 - Installed executable SHA-256 matches the Release build:
-  `2a1215b923556fb1c792d5a95907d778475753a32d145a2cfeb485b79e949b18`.
-- SwiftPM: 108 tests passed, zero failures. The Release build was compiled and
+  `94abff0a5f21f5774cecd0910f442ec2fac62c7f48dbe3134a5cb2c9820c43d4`.
+- SwiftPM: 113 tests passed, zero failures. The Release build was compiled and
   installed through the single-copy installer; later interactive acceptance is user-owned.
 
 Verified against the installed application through native UI:
@@ -114,9 +114,16 @@ No provider credentials or other applications' permissions were changed.
 - Feishu selection capture enables Electron's `AXManualAccessibility` attribute
   for its known bundle, searches a bounded focused-node neighborhood, and clears
   the pending context when an observed external app reports deselection.
-- If Feishu still exposes no AX selection, the user-invoked hotkey takes a
-  one-shot Cmd-C snapshot only for Feishu, reads the resulting text, and restores
-  every prior pasteboard representation before displaying context.
+- If Feishu exposes no AX selection, the user-invoked hotkey takes a one-shot
+  Cmd-C snapshot, reads the resulting text, and restores every prior pasteboard
+  representation before displaying context. This Feishu-only path is not live;
+  other supported applications retain system-wide AX live selection capture.
+- Model connectivity derives its probe from the configured base URL and requests
+  exactly one `/v1/models` segment. The persistent English/Simplified Chinese
+  setting now redraws the menu-bar surface and conversation UI as well as Settings.
+- A 404 from the optional `/v1/models` directory is a warning rather than a
+  model-use failure. Applying valid credentials clears a stale remembered-key
+  startup alert, and deleting the only conversation creates a fresh empty one.
 
 Final system permission recovery is a host operation after each ad-hoc binary
 replacement. Re-adding the current installed hash remains the only local

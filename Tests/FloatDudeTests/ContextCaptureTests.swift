@@ -44,6 +44,25 @@ final class ContextCaptureTests: XCTestCase {
         XCTAssertEqual(pasteboard.readCount, 0)
     }
 
+    func testShortcutCaptureKeepsSystemWideAXAheadOfProcessFallback() {
+        let copyFallback = FakeSelectionCopyFallback(text: "must not be used")
+        let capture = SelectionCapture(
+            accessibility: SystemWideOnlyAccessibilityProvider(text: "Codex selection"),
+            pasteboard: FakePasteboard(text: "old clipboard"),
+            selectionCopyFallback: copyFallback
+        )
+
+        XCTAssertEqual(
+            capture.captureShortcutSelection(),
+            .captured(CapturedContext(
+                text: "Codex selection",
+                source: .accessibilitySelection,
+                applicationName: nil
+            ))
+        )
+        XCTAssertEqual(copyFallback.callCount, 0)
+    }
+
     func testAccessibilitySelectionCarriesBoundsForPanelAvoidance() async {
         let rect = CGRect(x: 100, y: 200, width: 180, height: 24)
         let capture = SelectionCapture(
@@ -355,6 +374,23 @@ private struct FakeAccessibilityProvider: AccessibilityProviding {
 
     func canReplaceSelectedText(in focusedElement: AXUIElement) throws -> Bool {
         canReplaceSelection
+    }
+}
+
+private struct SystemWideOnlyAccessibilityProvider: AccessibilityProviding {
+    let text: String
+    var isTrusted: Bool { true }
+
+    func focusedElement() throws -> AXUIElement? {
+        AXUIElementCreateSystemWide()
+    }
+
+    func focusedElement(in processID: pid_t?) throws -> AXUIElement? {
+        processID == nil ? AXUIElementCreateSystemWide() : nil
+    }
+
+    func selectedText(from focusedElement: AXUIElement) throws -> String? {
+        text
     }
 }
 

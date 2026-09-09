@@ -189,6 +189,26 @@ final class LLMClientTests: XCTestCase {
         XCTAssertEqual(URLProtocolStub.lastRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer test-key")
     }
 
+    func testModelCatalogPathIsAlwaysBaseURLPlusOneV1ModelsSegment() throws {
+        XCTAssertEqual(
+            try LLMEndpoint.modelsURL(for: URL(string: "https://provider.example/api")!),
+            URL(string: "https://provider.example/api/v1/models")
+        )
+        XCTAssertEqual(
+            try LLMEndpoint.modelsURL(for: URL(string: "https://provider.example/v1")!),
+            URL(string: "https://provider.example/v1/models")
+        )
+    }
+
+    func testModelCatalog404IsAnOptionalDirectoryBoundary() {
+        XCTAssertTrue(ModelCatalogClient.isOptionalCatalogEndpointUnavailable(
+            AgentEngineError.modelCatalogUnavailable("Model test failed with HTTP 404.")
+        ))
+        XCTAssertFalse(ModelCatalogClient.isOptionalCatalogEndpointUnavailable(
+            AgentEngineError.modelCatalogUnavailable("Model test failed with HTTP 401.")
+        ))
+    }
+
     func testModelCatalogErrorRedactsStoredCredential() async throws {
         URLProtocolStub.configure(
             chunks: [Data(#"{"error":{"message":"rejected Bearer secret-model-key"}}"#.utf8)],

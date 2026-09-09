@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(Combine)
+import Combine
+#endif
+
 enum CredentialMode: String, CaseIterable, Codable, Identifiable, Sendable, Equatable {
     case noAuthentication
     case thisSessionOnly
@@ -40,6 +44,89 @@ enum SettingsLanguage: String, CaseIterable, Codable, Identifiable, Sendable, Eq
             ? .simplifiedChinese
             : .english
     }
+}
+
+enum ProductTextKey: Hashable {
+    case menuReady, menuAsk, menuNewConversation, menuExports, menuSettings, menuQuit
+    case selectedText, accessibilitySelection, feishuSnapshot, clipboard, directInput
+    case askPlaceholder, askAnything, askHint, attachHelp, openAccessibilitySettings
+    case active, selectAction, removeAttachment, jumpLatest, deleteConversationQuestion
+    case deleteConversation, deleteCurrentConversation, conversationDeleteHelp, newConversation
+    case closeFloatDude, conversations, copy, complete, cancelled, responseError, tryAgain
+    case you, floatDude, jumpToUserMessage, capturedFeishuSnapshot, noSelection
+}
+
+struct ProductCopy: Sendable {
+    let language: SettingsLanguage
+
+    func text(_ key: ProductTextKey) -> String {
+        switch language {
+        case .english: Self.english[key] ?? ""
+        case .simplifiedChinese: Self.simplifiedChinese[key] ?? ""
+        }
+    }
+
+    func localizedGuidance(_ raw: String) -> String {
+        guard language == .simplifiedChinese else { return raw }
+        if raw.localizedCaseInsensitiveContains("Accessibility access is unavailable") {
+            return "辅助功能不可用。仍可使用剪贴板回退或直接输入。"
+        }
+        if raw.localizedCaseInsensitiveContains("No selection is active") || raw.localizedCaseInsensitiveContains("No selection or clipboard") {
+            return "当前没有选中文本。请在下方输入问题。"
+        }
+        if raw.localizedCaseInsensitiveContains("Captured from Feishu") {
+            return "已在快捷键触发时获取飞书选区。此渲染器不支持实时选区更新。"
+        }
+        if raw.localizedCaseInsensitiveContains("Using Clipboard") {
+            return "由于辅助功能不可用，正在使用剪贴板内容。"
+        }
+        if raw.localizedCaseInsensitiveContains("Clipboard content looks like a credential") {
+            return "剪贴板内容疑似包含凭据，已被拦截。请重新选择文本或直接输入。"
+        }
+        return raw
+    }
+
+    private static let english: [ProductTextKey: String] = [
+        .menuReady: "Ready in the menu bar", .menuAsk: "Ask FloatDude…",
+        .menuNewConversation: "New Conversation", .menuExports: "Open Exports Folder",
+        .menuSettings: "Settings…", .menuQuit: "Quit FloatDude",
+        .selectedText: "Selected text", .accessibilitySelection: "Accessibility selection",
+        .feishuSnapshot: "Feishu shortcut snapshot", .clipboard: "Clipboard", .directInput: "Direct input",
+        .askPlaceholder: "Ask FloatDude…", .askAnything: "Ask Anything",
+        .askHint: "Enter a question or instructions", .attachHelp: "Attach PDF, Markdown, Word, or spreadsheet",
+        .openAccessibilitySettings: "Open Accessibility Settings", .active: "Active",
+        .selectAction: "Select this action", .removeAttachment: "Remove %@", .jumpLatest: "Jump to latest message",
+        .deleteConversationQuestion: "Delete this conversation?", .deleteConversation: "Delete Conversation",
+        .deleteCurrentConversation: "Delete Current Conversation",
+        .conversationDeleteHelp: "Its local messages and managed attachment copies will be removed.",
+        .newConversation: "New Conversation", .closeFloatDude: "Close FloatDude",
+        .conversations: "Conversations", .copy: "Copy", .complete: "Complete",
+        .cancelled: "Cancelled", .responseError: "Response error", .tryAgain: "Try Again",
+        .you: "YOU", .floatDude: "FLOATDUDE", .jumpToUserMessage: "Jump to your message",
+        .capturedFeishuSnapshot: "Captured from Feishu when you invoked the shortcut. Live selection updates are unavailable in this renderer.",
+        .noSelection: "No selection is active. Enter a prompt below.",
+    ]
+
+    private static let simplifiedChinese: [ProductTextKey: String] = [
+        .menuReady: "已在菜单栏就绪", .menuAsk: "呼出 FloatDude…",
+        .menuNewConversation: "新建对话", .menuExports: "打开导出文件夹",
+        .menuSettings: "设置…", .menuQuit: "退出 FloatDude",
+        .selectedText: "选中文本", .accessibilitySelection: "辅助功能选区",
+        .feishuSnapshot: "飞书快捷键快照", .clipboard: "剪贴板", .directInput: "直接输入",
+        .askPlaceholder: "问问 FloatDude…", .askAnything: "自由提问",
+        .askHint: "输入问题或指令", .attachHelp: "添加 PDF、Markdown、Word 或电子表格",
+        .openAccessibilitySettings: "打开辅助功能设置", .active: "当前操作",
+        .selectAction: "选择此操作", .removeAttachment: "移除 %@", .jumpLatest: "跳转到最新消息",
+        .deleteConversationQuestion: "删除此对话？", .deleteConversation: "删除对话",
+        .deleteCurrentConversation: "删除当前对话",
+        .conversationDeleteHelp: "本地消息和托管的附件副本将被删除。",
+        .newConversation: "新建对话", .closeFloatDude: "关闭 FloatDude",
+        .conversations: "对话", .copy: "复制", .complete: "完成",
+        .cancelled: "已取消", .responseError: "回答出错", .tryAgain: "重试",
+        .you: "你", .floatDude: "FLOATDUDE", .jumpToUserMessage: "跳转到你的消息",
+        .capturedFeishuSnapshot: "已在快捷键触发时获取飞书选区。此渲染器不支持实时选区更新。",
+        .noSelection: "当前没有选中文本。请在下方输入问题。",
+    ]
 }
 
 struct AppSettings: Sendable, Equatable {
@@ -125,7 +212,7 @@ protocol SettingsStoring: AnyObject {
 }
 
 @MainActor
-final class SettingsStore: SettingsStoring {
+final class SettingsStore: ObservableObject, SettingsStoring {
     private enum Key {
         static let baseURL = "floatdude.settings.baseURL"
         static let model = "floatdude.settings.model"
@@ -137,7 +224,7 @@ final class SettingsStore: SettingsStoring {
     }
 
     private let defaults: UserDefaults
-    private(set) var current: AppSettings
+    @Published private(set) var current: AppSettings
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults

@@ -98,6 +98,15 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(SettingsStore(defaults: defaults).current.settingsLanguage, .english)
     }
 
+    func testProductCopyProvidesMenuAndConversationChineseStrings() {
+        let copy = ProductCopy(language: .simplifiedChinese)
+
+        XCTAssertEqual(copy.text(.menuAsk), "呼出 FloatDude…")
+        XCTAssertEqual(copy.text(.newConversation), "新建对话")
+        XCTAssertEqual(PromptAction.explain.title(in: .simplifiedChinese), "解释")
+        XCTAssertEqual(PromptAction.ask.title(in: .english), "Ask Anything")
+    }
+
     func testCustomSystemPromptHasBoundedPersistedSize() {
         let oversized = AppSettings(
             baseURL: URL(string: "https://provider.example"),

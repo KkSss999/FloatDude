@@ -70,17 +70,26 @@ stable prefix without vendor-specific fields they may reject.
   parent/child neighborhood around the focused AX element, covering Chromium
   renderers that expose selected text through an `AXWebArea` rather than the
   focused group.
-- If that direct read still fails, a Feishu-only hotkey fallback snapshots the
+- If direct AX reading fails in Feishu, a Feishu-only hotkey fallback snapshots
   selected text through Cmd-C, detects a new pasteboard change, and restores the
-  complete prior pasteboard. It is not a background capability and is never used
-  for other applications. This fallback is intentionally **not live selection
+  complete prior pasteboard. It is intentionally **not live selection
   synchronization**: it captures only the selection that exists when the user
-  invokes FloatDude's shortcut.
+  invokes FloatDude's shortcut. Other applications keep system-wide AX focus as
+  the primary live path, with process-scoped AX as a secondary lookup.
 - User prompts and assistant answers persist so subsequent turns receive ordered history.
 - Attachments are copied into a conversation-specific managed directory after type, size, and extraction validation.
 - Deleting a conversation removes its managed attachment copies after explicit UI confirmation.
 - Credentials remain outside conversation files, prompts, errors, logs, and URLs.
 - Remembered credentials load outside the main actor. A code-identity marker prevents an outdated ad-hoc ACL from being queried after rebuilds, and Keychain reads prohibit authentication UI.
+
+## Language contract
+
+- English and Simplified Chinese are the two supported product languages.
+- `SettingsLanguage` is a persisted, observable application setting. The menu-bar
+  surface, floating conversation, prompt actions, context labels, navigation,
+  and Settings redraw immediately when it changes.
+- User messages, provider/model names, attachments, and protected software
+  policy are user or provider data and are not mechanically translated.
 
 ## Window contract
 

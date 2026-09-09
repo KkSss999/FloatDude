@@ -30,8 +30,8 @@ FloatDude uses macOS-native shortcuts, selection capture, window behavior, and p
 - Keeps the panel visible across app focus, Spaces, full screen, and Stage Manager until you explicitly close it.
 - Reopens the last active conversation at its newest turn, with jump-to-latest and hover-expandable message navigation.
 - Keeps a pending selected-text context synchronized while the nonactivating panel is open; a new conversation receives that live context without persisting it.
-- Feishu falls back to a clipboard-preserving snapshot at shortcut invocation when its Electron-style renderer exposes no Accessibility selection; that path is not live synchronization.
-- Lets Settings switch immediately between English and Simplified Chinese.
+- Feishu falls back to a clipboard-preserving snapshot at shortcut invocation when its Electron-style renderer exposes no Accessibility selection; that path is not live synchronization. Other supported applications retain live AX selection updates.
+- Lets the menu-bar surface, conversation panel, and Settings switch immediately between English and Simplified Chinese.
 - Attaches PDF, Markdown/text, Word, XLSX, CSV, and TSV files directly from the panel.
 - Gives the model exactly two bounded native tools: read attached content and write managed Markdown/text exports.
 - Provides **Explain**, **Translate**, **Rewrite**, and **Ask Anything** actions.
@@ -60,7 +60,11 @@ There is no third-party runtime dependency, FloatDude account, synchronization s
 - Xcode 26 or newer
 - An OpenAI Chat Completions or Anthropic Messages compatible model endpoint
 
-FloatDude currently ships as a development build. A signed, notarized DMG is not available yet.
+The v0.1.0 GitHub Release provides an ad-hoc signed, unnotarized DMG for local
+evaluation. If Gatekeeper blocks the first launch, Control-click FloatDude and
+choose **Open**. Grant Accessibility to the installed `/Applications/FloatDude.app`;
+replacing this development build can require authorization again because it has
+no stable Developer ID identity.
 
 ## Build and run
 

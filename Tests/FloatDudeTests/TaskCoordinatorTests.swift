@@ -200,6 +200,17 @@ final class TaskCoordinatorTests: XCTestCase {
         XCTAssertEqual(coordinator.conversations.count, 1)
     }
 
+    func testDeletingOnlyConversationCreatesANewEmptyConversation() {
+        let coordinator = makeCoordinator()
+        let onlyConversationID = coordinator.activeConversationID
+
+        coordinator.deleteConversation(onlyConversationID)
+
+        XCTAssertEqual(coordinator.conversations.count, 1)
+        XCTAssertNotEqual(coordinator.activeConversationID, onlyConversationID)
+        XCTAssertTrue(coordinator.activeConversation?.messages.isEmpty == true)
+    }
+
     func testNewConversationCarriesTheLatestLiveSelectionIntoItsPendingContext() {
         let initial = CapturedContext(
             text: "original selection",

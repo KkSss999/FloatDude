@@ -169,6 +169,17 @@ enum LLMEndpoint {
         return normalized.appendingPathComponent("v1").appendingPathComponent("messages")
     }
 
+    /// Model discovery is always the provider base URL plus `/v1/models`.
+    /// Accepting a base URL that already terminates in `/v1` preserves that
+    /// single version segment instead of producing `/v1/v1/models`.
+    static func modelsURL(for baseURL: URL) throws -> URL {
+        let normalized = try normalizedBaseURL(baseURL)
+        if normalized.path.split(separator: "/").last?.lowercased() == "v1" {
+            return normalized.appendingPathComponent("models")
+        }
+        return normalized.appendingPathComponent("v1").appendingPathComponent("models")
+    }
+
     private static func isLoopback(_ host: String) -> Bool {
         let lowercased = host.lowercased()
         return lowercased == "localhost"

@@ -187,6 +187,7 @@ struct FloatingPanel: View {
     @Binding private var prompt: String
     @Binding private var selectedAction: PromptAction
 
+    private let language: SettingsLanguage
     private let selectedText: String
     private let selectedSource: CapturedContext.Source?
     private let canRewriteSelection: Bool
@@ -201,12 +202,14 @@ struct FloatingPanel: View {
     private let handlers: FloatingPanelHandlers
     private let customContent: AnyView?
     @State private var didExpandOnce = false
-    @State private var isConfirmingConversationDelete = false
+    @State private var isConversationPickerPresented = false
+    @State private var conversationPendingDeletionID: UUID?
     @State private var isAtConversationBottom = true
 
     init(
         state: Binding<FloatingPanelState>,
         prompt: Binding<String>,
+        language: SettingsLanguage = .systemDefault,
         selectedText: String = "",
         selectedSource: CapturedContext.Source? = nil,
         canRewriteSelection: Bool = false,
@@ -224,6 +227,7 @@ struct FloatingPanel: View {
         self._state = state
         self._prompt = prompt
         self._selectedAction = selectedAction
+        self.language = language
         self.selectedText = selectedText
         self.selectedSource = selectedSource
         self.canRewriteSelection = canRewriteSelection
@@ -245,6 +249,7 @@ struct FloatingPanel: View {
         self._state = .constant(.idle)
         self._prompt = .constant("")
         self._selectedAction = .constant(.ask)
+        self.language = .systemDefault
         self.selectedText = ""
         self.selectedSource = nil
         self.canRewriteSelection = false
@@ -292,6 +297,7 @@ struct FloatingPanel: View {
 
                             PromptView(
                                 prompt: $prompt,
+                                language: language,
                                 selectedText: selectedText,
                                 selectedSource: selectedSource,
                                 canRewriteSelection: canRewriteSelection,
@@ -345,7 +351,7 @@ struct FloatingPanel: View {
                     }
                     .overlay(alignment: .leading) {
                         if conversationMessages.contains(where: { $0.role == .user }) {
-                            ConversationNavigationRail(messages: conversationMessages) { messageID in
+                            ConversationNavigationRail(messages: conversationMessages, language: language) { messageID in
                                 withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.18)) {
                                     proxy.scrollTo(messageID, anchor: .top)
                                 }
@@ -364,8 +370,8 @@ struct FloatingPanel: View {
                                     .background(.regularMaterial, in: Circle())
                             }
                             .buttonStyle(.plain)
-                            .help("Jump to latest message")
-                            .accessibilityLabel("Jump to latest message")
+                            .help(copy.text(.jumpLatest))
+                            .accessibilityLabel(copy.text(.jumpLatest))
                             .padding(14)
                             .transition(reduceMotion ? .identity : .scale.combined(with: .opacity))
                         }
@@ -407,17 +413,18 @@ struct FloatingPanel: View {
             if reduceMotion { transaction.animation = nil }
         }
         .confirmationDialog(
-            "Delete this conversation?",
-            isPresented: $isConfirmingConversationDelete,
+            copy.text(.deleteConversationQuestion),
+            isPresented: deleteConfirmationPresented,
             titleVisibility: .visible
         ) {
-            if let activeConversationID {
-                Button("Delete Conversation", role: .destructive) {
-                    handlers.onDeleteConversation?(activeConversationID)
+            if let conversationPendingDeletionID {
+                Button(copy.text(.deleteConversation), role: .destructive) {
+                    handlers.onDeleteConversation?(conversationPendingDeletionID)
+                    self.conversationPendingDeletionID = nil
                 }
             }
         } message: {
-            Text("Its local messages and managed attachment copies will be removed.")
+            Text(copy.text(.conversationDeleteHelp))
         }
     }
 
@@ -433,7 +440,7 @@ struct FloatingPanel: View {
             }
             .frame(height: 26)
             .overlay { PanelDragHandle().accessibilityHidden(true) }
-            .help("Drag to move")
+            .help(language == .simplifiedChinese ? "拖动以移动窗口" : "Drag to move")
             conversationMenu
             Button {
                 handlers.onCancel?()
@@ -445,50 +452,104 @@ struct FloatingPanel: View {
             }
             .buttonStyle(.plain)
             .keyboardShortcut(.escape)
-            .help("Close (Esc)")
-            .accessibilityLabel("Close FloatDude")
+            .help(language == .simplifiedChinese ? "关闭（Esc）" : "Close (Esc)")
+            .accessibilityLabel(copy.text(.closeFloatDude))
         }
     }
 
+    private var copy: ProductCopy {
+        ProductCopy(language: language)
+    }
+
     private var conversationMenu: some View {
-        Menu {
-            Button("New Conversation", systemImage: "plus") {
-                handlers.onNewConversation?()
-            }
-            Divider()
-            ForEach(conversations) { conversation in
-                Button {
-                    handlers.onSelectConversation?(conversation.id)
-                } label: {
-                    if conversation.id == activeConversationID {
-                        Label(conversation.title, systemImage: "checkmark")
-                    } else {
-                        Text(conversation.title)
-                    }
-                }
-            }
-            if activeConversationID != nil, conversations.count > 1 {
-                Divider()
-                Button("Delete Current Conversation", role: .destructive) {
-                    isConfirmingConversationDelete = true
-                }
-            }
+        Button {
+            isConversationPickerPresented = true
         } label: {
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: 26, height: 26)
         }
-        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
         .fixedSize()
-        .help("Conversations")
+        .help(copy.text(.conversations))
+        .popover(isPresented: $isConversationPickerPresented, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 4) {
+                Button(copy.text(.newConversation), systemImage: "plus") {
+                    isConversationPickerPresented = false
+                    handlers.onNewConversation?()
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+
+                Divider()
+
+                ForEach(conversations) { conversation in
+                    conversationPickerRow(conversation)
+                }
+            }
+            .padding(6)
+            .frame(minWidth: 250, maxWidth: 320, alignment: .leading)
+        }
+    }
+
+    private func conversationPickerRow(_ conversation: AgentConversation) -> some View {
+        HStack(spacing: 8) {
+            Button {
+                isConversationPickerPresented = false
+                handlers.onSelectConversation?(conversation.id)
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: conversation.id == activeConversationID ? "checkmark" : "bubble.left")
+                        .frame(width: 14)
+                    Text(conversation.title)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                isConversationPickerPresented = false
+                conversationPendingDeletionID = conversation.id
+            } label: {
+                Image(systemName: "trash")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 28, height: 26)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.red)
+            .help(copy.text(.deleteConversation))
+            .accessibilityLabel("\(copy.text(.deleteConversation)) \(conversation.title)")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            conversation.id == activeConversationID
+                ? Color.accentColor.opacity(0.14)
+                : Color.clear,
+            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+        )
+    }
+
+    private var deleteConfirmationPresented: Binding<Bool> {
+        Binding(
+            get: { conversationPendingDeletionID != nil },
+            set: { isPresented in
+                if !isPresented {
+                    conversationPendingDeletionID = nil
+                }
+            }
+        )
     }
 
     private var conversationTranscript: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(conversationMessages) { message in
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(message.role == .user ? "YOU" : "FLOATDUDE")
+                    Text(message.role == .user ? copy.text(.you) : copy.text(.floatDude))
                         .font(.system(size: 9, weight: .semibold))
                         .tracking(0.8)
                         .foregroundStyle(.secondary)
@@ -520,12 +581,12 @@ struct FloatingPanel: View {
                     Button {
                         handlers.onCopy?(text)
                     } label: {
-                        Label("Copy", systemImage: "doc.on.doc")
+                        Label(copy.text(.copy), systemImage: "doc.on.doc")
                             .font(.callout.weight(.medium))
                     }
                     .buttonStyle(.plain)
                     Spacer()
-                    Text("Complete")
+                    Text(copy.text(.complete))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -534,7 +595,7 @@ struct FloatingPanel: View {
                 .glassInset(cornerRadius: 10)
             }
         case .cancelled:
-            Label("Cancelled", systemImage: "pause.circle")
+            Label(copy.text(.cancelled), systemImage: "pause.circle")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
@@ -542,7 +603,7 @@ struct FloatingPanel: View {
                 .glassInset(cornerRadius: 10)
         case let .error(message):
             VStack(alignment: .leading, spacing: 8) {
-                Label("Response error", systemImage: "exclamationmark.triangle")
+                Label(copy.text(.responseError), systemImage: "exclamationmark.triangle")
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(.orange)
                 Text(message)
@@ -550,10 +611,10 @@ struct FloatingPanel: View {
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 12) {
                     if handlers.onRetry != nil {
-                        Button("Try Again") { handlers.onRetry?() }
+                        Button(copy.text(.tryAgain)) { handlers.onRetry?() }
                     }
                     if handlers.onOpenSettings != nil {
-                        Button("Settings…") { handlers.onOpenSettings?() }
+                        Button(copy.text(.menuSettings)) { handlers.onOpenSettings?() }
                     }
                 }
                 .buttonStyle(.borderless)
@@ -619,6 +680,7 @@ private struct PanelContentHeightPreference: PreferenceKey {
 /// direct scroll target so long chats remain navigable without a separate list.
 private struct ConversationNavigationRail: View {
     let messages: [AgentMessage]
+    let language: SettingsLanguage
     let onJump: (UUID) -> Void
 
     @State private var isHoveringRail = false
@@ -626,6 +688,10 @@ private struct ConversationNavigationRail: View {
 
     private var navigationMessages: [AgentMessage] {
         constSample(messages.filter { $0.role == .user }, maximum: 18)
+    }
+
+    private var copy: ProductCopy {
+        ProductCopy(language: language)
     }
 
     var body: some View {
@@ -649,7 +715,11 @@ private struct ConversationNavigationRail: View {
                     .onHover { hovering in
                         hoveredMessageID = hovering ? message.id : nil
                     }
-                    .accessibilityLabel("Jump to \(message.role == .user ? "your" : "FloatDude") message")
+                    .accessibilityLabel(
+                        message.role == .user
+                            ? copy.text(.jumpToUserMessage)
+                            : "\(copy.text(.jumpLatest)) · FloatDude"
+                    )
                 }
             }
             .padding(.vertical, 4)
@@ -661,7 +731,7 @@ private struct ConversationNavigationRail: View {
 
             if isHoveringRail, let hoveredMessage {
                 VStack(alignment: .leading, spacing: 5) {
-                    Text(hoveredMessage.role == .user ? "YOU" : "FLOATDUDE")
+                    Text(hoveredMessage.role == .user ? copy.text(.you) : copy.text(.floatDude))
                         .font(.system(size: 9, weight: .semibold))
                         .tracking(0.8)
                         .foregroundStyle(.secondary)

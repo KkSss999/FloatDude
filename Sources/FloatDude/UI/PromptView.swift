@@ -10,6 +10,7 @@ struct PromptView: View {
     @Binding var prompt: String
     @Binding var selectedAction: PromptAction
 
+    let language: SettingsLanguage
     let selectedText: String
     let selectedSource: CapturedContext.Source?
     let canRewriteSelection: Bool
@@ -28,6 +29,7 @@ struct PromptView: View {
 
     init(
         prompt: Binding<String>,
+        language: SettingsLanguage = .systemDefault,
         selectedText: String = "",
         selectedSource: CapturedContext.Source? = nil,
         canRewriteSelection: Bool = false,
@@ -45,6 +47,7 @@ struct PromptView: View {
     ) {
         self._prompt = prompt
         self._selectedAction = selectedAction
+        self.language = language
         self.selectedText = selectedText
         self.selectedSource = selectedSource
         self.canRewriteSelection = canRewriteSelection
@@ -85,6 +88,10 @@ struct PromptView: View {
         }
     }
 
+    private var copy: ProductCopy {
+        ProductCopy(language: language)
+    }
+
     private var selectedContext: some View {
         VStack(alignment: .leading, spacing: 6) {
             if !selectedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -94,7 +101,7 @@ struct PromptView: View {
                         .frame(width: 2)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text((selectedSource?.displayName ?? "Selected text").uppercased())
+                        Text((selectedSource?.displayName(in: language) ?? copy.text(.selectedText)).uppercased())
                             .font(.system(size: 9, weight: .semibold))
                             .tracking(1)
                             .foregroundStyle(.secondary)
@@ -112,12 +119,12 @@ struct PromptView: View {
 
             if let contextGuidance {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label(contextGuidance, systemImage: "info.circle")
+                    Label(copy.localizedGuidance(contextGuidance), systemImage: "info.circle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     if contextGuidance.localizedCaseInsensitiveContains("Accessibility") {
-                        Button("Open Accessibility Settings") {
+                        Button(copy.text(.openAccessibilitySettings)) {
                             onOpenAccessibilitySettings?()
                         }
                         .buttonStyle(.link)
@@ -150,13 +157,13 @@ struct PromptView: View {
             HStack(spacing: 6) {
                 Image(systemName: action.symbolName)
                     .accessibilityHidden(true)
-                Text(action.title)
+                Text(action.title(in: language))
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
                 if isSelected {
                     Image(systemName: "checkmark")
                         .font(.caption.weight(.bold))
-                        .accessibilityLabel("Active")
+                        .accessibilityLabel(copy.text(.active))
                 }
             }
             .font(.system(size: 12, weight: .medium))
@@ -167,7 +174,7 @@ struct PromptView: View {
         .buttonStyle(GlassActionStyle(selected: isSelected))
         .foregroundStyle(isSelected ? GlassPalette.coral(scheme) : Color.primary)
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
-        .accessibilityHint(isSelected ? "Active action" : "Select this action")
+        .accessibilityHint(isSelected ? copy.text(.active) : copy.text(.selectAction))
     }
 
     private var promptEditor: some View {
@@ -181,16 +188,16 @@ struct PromptView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
-            .help("Attach PDF, Markdown, Word, or spreadsheet")
+            .help(copy.text(.attachHelp))
 
-            TextField("Ask FloatDude…", text: $prompt, axis: .vertical)
+            TextField(copy.text(.askPlaceholder), text: $prompt, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
                 .lineLimit(1...2)
                 .focused($isPromptFocused)
                 .onSubmit { submitAsk() }
-                .accessibilityLabel("Ask Anything")
-                .accessibilityHint("Enter a question or instructions")
+                .accessibilityLabel(copy.text(.askAnything))
+                .accessibilityHint(copy.text(.askHint))
 
             Button {
                 submitAsk()
@@ -204,7 +211,7 @@ struct PromptView: View {
             .foregroundStyle(scheme == .dark ? Color.black : Color.white)
             .opacity(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isDisabled ? 0.4 : 1)
             .disabled(prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isDisabled)
-            .accessibilityLabel("Ask FloatDude")
+            .accessibilityLabel(copy.text(.menuAsk))
         }
         .padding(.leading, 14)
         .padding(.trailing, 8)
@@ -231,7 +238,7 @@ struct PromptView: View {
                                 Image(systemName: "xmark.circle.fill")
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel("Remove \(attachment.displayName)")
+                            .accessibilityLabel(String(format: copy.text(.removeAttachment), attachment.displayName))
                         }
                         .font(.caption)
                         .padding(.horizontal, 8)

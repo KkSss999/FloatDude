@@ -11,11 +11,21 @@ struct CapturedContext: Sendable, Equatable {
         case directInput
 
         var displayName: String {
-            switch self {
+            return switch self {
             case .accessibilitySelection: "Accessibility selection"
-            case .selectionCopy: "Feishu selection"
+            case .selectionCopy: "Feishu shortcut snapshot"
             case .clipboard: "Clipboard"
             case .directInput: "Direct input"
+            }
+        }
+
+        func displayName(in language: SettingsLanguage) -> String {
+            let copy = ProductCopy(language: language)
+            return switch self {
+            case .accessibilitySelection: copy.text(.accessibilitySelection)
+            case .selectionCopy: copy.text(.feishuSnapshot)
+            case .clipboard: copy.text(.clipboard)
+            case .directInput: copy.text(.directInput)
             }
         }
     }
@@ -90,6 +100,9 @@ protocol ContextCapturing: Sendable {
     /// Capture before activating the panel. `directInput` is supplied by the
     /// coordinator's editable input field and is the final fallback.
     func captureContext(directInput: String?) -> ContextCaptureResult
+    /// Explicit user shortcut capture. May use a clipboard-preserving copy
+    /// snapshot after AX fails; background refresh must never call this method.
+    func captureShortcutSelection() -> ContextCaptureResult?
     /// A best-effort update used while the nonactivating panel remains on
     /// screen. It intentionally never reads the clipboard: a live refresh must
     /// only reflect a newly selected piece of text from another application.
@@ -98,6 +111,10 @@ protocol ContextCapturing: Sendable {
 }
 
 extension ContextCapturing {
+    func captureShortcutSelection() -> ContextCaptureResult? {
+        captureLiveSelection()
+    }
+
     func captureLiveSelection() -> ContextCaptureResult? { nil }
     func captureLiveSelection(from _: pid_t?) -> ContextCaptureResult? {
         captureLiveSelection()
@@ -144,28 +161,13 @@ struct SelectionCapture: ContextCapturing {
     func captureContext(directInput: String? = nil) -> ContextCaptureResult {
         // This method performs only short, synchronous system reads. The
         // coordinator must call it before showing/activating the panel.
-        let sourceProcessID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        accessibility.prepareForSelectionCapture(in: sourceProcessID)
-        if let selection = readSelection(from: sourceProcessID),
-           let result = makeResult(
-               text: selection.text,
-               source: .accessibilitySelection,
-               canReplaceSelection: selection.canReplace,
-               selectionRect: selection.rect
-           ) {
-            return result
-        }
-
-        if let copiedSelection = selectionCopyFallback.captureSelection(
-            bundleIdentifier: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
-            processID: sourceProcessID ?? 0
-        ),
-            let result = makeResult(
-               text: copiedSelection,
-               source: .selectionCopy,
-               guidance: "Captured from Feishu when you invoked the shortcut. Live selection updates are unavailable in this renderer."
-           ) {
-            return result
+        if let shortcutResult = captureShortcutSelection() {
+            switch shortcutResult {
+            case .captured, .rejected:
+                return shortcutResult
+            case .unavailable:
+                break
+            }
         }
 
         if let clipboardText = readClipboardText() {
@@ -195,6 +197,45 @@ struct SelectionCapture: ContextCapturing {
             ?? .unavailable(reason: .noSelectionOrClipboard)
     }
 
+    func captureShortcutSelection() -> ContextCaptureResult? {
+        guard let sourceApplication = NSWorkspace.shared.frontmostApplication,
+              sourceApplication.bundleIdentifier != Bundle.main.bundleIdentifier
+        else { return nil }
+        let sourceProcessID = sourceApplication.processIdentifier
+        accessibility.prepareForSelectionCapture(in: sourceProcessID)
+        if let selection = readSelection(),
+           let result = makeResult(
+               text: selection.text,
+               source: .accessibilitySelection,
+               canReplaceSelection: selection.canReplace,
+               selectionRect: selection.rect
+           ) {
+            return result
+        }
+        if let selection = readSelection(from: sourceProcessID),
+           let result = makeResult(
+               text: selection.text,
+               source: .accessibilitySelection,
+               canReplaceSelection: selection.canReplace,
+               selectionRect: selection.rect
+           ) {
+            return result
+        }
+
+        if let copiedSelection = selectionCopyFallback.captureSelection(
+            bundleIdentifier: sourceApplication.bundleIdentifier,
+            processID: sourceProcessID
+        ),
+            let result = makeResult(
+               text: copiedSelection,
+               source: .selectionCopy,
+               guidance: "Captured from Feishu when you invoked the shortcut. Live selection updates are unavailable in this renderer."
+           ) {
+            return result
+        }
+        return .unavailable(reason: .noSelectionOrClipboard)
+    }
+
     func captureLiveSelection() -> ContextCaptureResult? {
         // The panel is nonactivating, but an input-control focus transition can
         // still make FloatDude the frontmost accessibility target on some macOS
@@ -206,6 +247,15 @@ struct SelectionCapture: ContextCapturing {
         guard let frontmost = NSWorkspace.shared.frontmostApplication,
               frontmost.bundleIdentifier != Bundle.main.bundleIdentifier
         else { return nil }
+        if let selection = readSelection(),
+           let result = makeResult(
+               text: selection.text,
+               source: .accessibilitySelection,
+               canReplaceSelection: selection.canReplace,
+               selectionRect: selection.rect
+           ) {
+            return result
+        }
         return captureLiveSelection(from: frontmost.processIdentifier)
     }
 
@@ -288,16 +338,16 @@ struct SelectionCapture: ContextCapturing {
 
 /// Feishu can render selectable message text without exposing AXSelectedText.
 /// At the user's explicit hot-key invocation, take a short-lived Cmd-C snapshot
-/// and restore every pasteboard item immediately. This is deliberately limited
-/// to Feishu's known bundle identifier, never runs in the background, and does
-/// not leave copied text on the system pasteboard.
+/// and restore every pasteboard item immediately. It never runs in the
+/// background and is deliberately limited to Feishu's known bundle identifier.
 struct FeishuSelectionCopyFallback: SelectionCopyFallback {
     private static let bundleIdentifiers: Set<String> = [
         "com.bytedance.macos.feishu",
     ]
 
-    func captureSelection(bundleIdentifier: String?, processID _: pid_t) -> String? {
-        guard let bundleIdentifier,
+    func captureSelection(bundleIdentifier: String?, processID: pid_t) -> String? {
+        guard processID > 0,
+              let bundleIdentifier,
               Self.bundleIdentifiers.contains(bundleIdentifier)
         else { return nil }
 
